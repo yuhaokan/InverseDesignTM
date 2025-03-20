@@ -5,13 +5,18 @@ import gymnasium as gym
 from gymnasium import spaces
 import matplotlib.pyplot as plt
 from matplotlib.patches import Rectangle, Circle
+import typing
 
 
 class BilliardTwoEnv(gym.Env):
-    def __init__(self):
+    def __init__(self, seed):
         super().__init__()
+
+        self.max_step = 1000  ##############################
+
+        self.seed = seed
         
-        self.n_scatterers = 3
+        self.n_scatterers = 20
         # Define action and observation spaces
 
         # both the action & obs space = n_scatterers * n_dim
@@ -64,7 +69,7 @@ class BilliardTwoEnv(gym.Env):
         # Meep use the 'last object wins' principle, ie, if multiple objects overlap, later objects in the list take precedence. 
         # Allow overlapping simplifies implementation and help explore more diverse configurations.
         # Initial scatterer positions, this is normalized position !!!
-        self.scatter_pos = self._generate_initial_positions()
+        self.scatter_pos = self._generate_initial_positions(self.seed)
         
         # For tracking progress
         self.best_error = float('inf')
@@ -278,8 +283,6 @@ class BilliardTwoEnv(gym.Env):
         return np.array(t_matrix)
     
     def _calculate_reward(self, tm):
-        # enforce the non-overlapping rule in step function, do not modify reward to penalize scatterer ovelapping
-
         # Target relationship: tm[0] * 1.73 = tm[1], expect a rank-1 TM
         error = np.sum(np.abs(tm[0] * 1.73 - tm[1])**2) 
         
@@ -287,45 +290,13 @@ class BilliardTwoEnv(gym.Env):
         reward = -error
         
         return reward, error
-    
-    def _modify_action_with_constraints(self, action):
-        """Modify the action to prevent overlapping"""
-        current_pos = self.scatter_pos.reshape(-1, 2)
-        action = action.reshape(-1, 2)
-        modified_action = action.copy()
-    
-        # Predict new positions
-        new_pos = current_pos + action
-    
-        min_distance = 2 * self.scatterer_radius
-        
-        # Check and adjust each pair of scatterers
-        for i in range(len(new_pos)):
-            for j in range(i + 1, len(new_pos)):
-                diff = new_pos[i] - new_pos[j]
-                distance = np.linalg.norm(diff)
-            
-                if distance < min_distance:
-                    # Calculate the overlap
-                    overlap = min_distance - distance
-                    direction = diff / distance
-                
-                    # Move scatterers apart
-                    modified_action[i] += 0.5 * overlap * direction
-                    modified_action[j] -= 0.5 * overlap * direction
-    
-        return modified_action.reshape(-1)
 
-    def step(self, action):
+    def step(self, action) -> tuple[spaces.Box, np.float32, bool, bool, dict[str, typing.Any]]:
         self.step_count += 1
 
         # Apply action (small adjustments to positions)
         scaling_factor = 0.05  # Control adjustment size
-
-        # Modify action to prevent overlapping
-        modified_action = self._modify_action_with_constraints(action * scaling_factor)
-
-        self.scatter_pos = np.clip(self.scatter_pos + modified_action, -1, 1)
+        self.scatter_pos = np.clip(self.scatter_pos + action * scaling_factor, -1, 1)
         
         # Calculate transmission matrix with new positions
         tm = self._calculate_tm(self.scatter_pos)
@@ -334,12 +305,12 @@ class BilliardTwoEnv(gym.Env):
         reward, error = self._calculate_reward(tm)
         
         # Check if goal is achieved or max steps reached
-        done = (error < 0.01) or (self.step_count >= 1000)           # here we set the max step to be 1000?
+        terminated = error < 0.01         # here we set the max step to be 1000?
         
+        truncated = self.step_count >= self.max_step
+
         info = {
             "error": error,
-            "tm_0": tm[0],
-            "tm_1": tm[1],
             "target": tm[0] * 1.73 - tm[1],
             "step": self.step_count
         }
@@ -348,26 +319,10 @@ class BilliardTwoEnv(gym.Env):
         if self.step_count % 10 == 0:
             print(f"Step {self.step_count}, Error: {error:.6f}, Reward: {reward:.6f}")
             
-        return self.scatter_pos, reward, done, info
-    
-    # def reset(self, *, seed=None):
-    #     if seed is not None:
-    #         np.random.seed(seed)
-
-    #     # Optionally reset to best known positions with small perturbation
-    #     if self.best_positions is not None and np.random.random() < 0.7:
-    #         # 70% chance to use best positions with noise
-    #         noise = np.random.normal(0, 0.05, size=6)  # Small Gaussian noise
-    #         self.scatter_pos = np.clip(self.best_positions + noise, -1, 1)
-    #     else:
-    #         # 30% chance to generate new random positions
-    #         self.scatter_pos = self._generate_initial_positions()
-        
-    #     self.step_count = 0
-    #     return self.scatter_pos
+        return self.scatter_pos, reward, terminated, truncated, info
 
     # at the beginning of each episode, reset env
-    def reset(self, *, seed=None, options=None):
+    def reset(self, seed=None) -> tuple[spaces.Box, dict[str, typing.Any]]:
         """
         Reset the environment.
 
@@ -385,16 +340,13 @@ class BilliardTwoEnv(gym.Env):
         # Optionally reset to best known positions with small perturbation
         if self.best_positions is not None and np.random.random() < 0.7:
             # 70% chance to use best positions with noise
-            noise = np.random.normal(0, 0.05, size=6)  # Small Gaussian noise
+            noise = np.random.normal(0, 0.05, size=(2*self.n_scatterers,))  # Small Gaussian noise
             self.scatter_pos = np.clip(self.best_positions + noise, -1, 1)
         else:
             # 30% chance to generate new random positions
             self.scatter_pos = self._generate_initial_positions(seed=seed)
 
         self.step_count = 0
-
-        # Get observation
-        observation = self._get_observation()
 
         # Create info dictionary
         info = {
@@ -403,20 +355,14 @@ class BilliardTwoEnv(gym.Env):
         }
 
         # Return both observation and info dict
-        return observation, info
-
-    def _get_observation(self):
-        # Make sure observation matches the defined space
-        observation = np.array(..., dtype=np.float32)
-        assert self.observation_space.contains(observation), "Invalid observation!"
-        return observation
+        return self.scatter_pos, info
     
-    def render(self, mode='human'):
+    def render(self):
         # Visualize current configuration
         actual_positions = []
-        for i in range(0, 6, 2):
-            x = self.scatter_pos[i] * (self.sx/2)
-            y = self.scatter_pos[i+1] * (self.sy/2)
+        for i in range(0, 2 * self.n_scatterers, 2):
+            x = self.scatter_pos[i] * (self.sx_scatterer/2)
+            y = self.scatter_pos[i+1] * (self.sy_scatterer/2)
             actual_positions.append((x, y))
         
         fig, ax = plt.subplots(figsize=(10, 6))
@@ -457,5 +403,6 @@ class BilliardTwoEnv(gym.Env):
         plt.show()
 
 if __name__ == "__main__":
-    env = BilliardTwoEnv()
+    env = BilliardTwoEnv(seed=55555)
     print(env._calculate_tm(env.scatter_pos))
+    env.render()
