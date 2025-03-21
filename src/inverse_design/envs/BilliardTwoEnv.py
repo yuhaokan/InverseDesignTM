@@ -1,22 +1,28 @@
 import numpy as np
 import meep as mp
-import numpy as np
 import gymnasium as gym
 from gymnasium import spaces
+from gymnasium.envs.registration import register
+from gymnasium.utils.env_checker import check_env
 import matplotlib.pyplot as plt
 from matplotlib.patches import Rectangle, Circle
 import typing
 
+# Suppress logging
+mp.verbosity(0)
+
+register(
+    id='BilliardTwoEnv-v0',                         
+    entry_point='BilliardTwoEnv:BilliardTwoEnv',        # module_name:class_name
+)
 
 class BilliardTwoEnv(gym.Env):
-    def __init__(self, seed):
+    def __init__(self):
         super().__init__()
 
-        self.max_step = 1000  ##############################
-
-        self.seed = seed
+        self.max_step = 3  ##############################
         
-        self.n_scatterers = 20
+        self.n_scatterers = 5
         # Define action and observation spaces
 
         # both the action & obs space = n_scatterers * n_dim
@@ -26,7 +32,7 @@ class BilliardTwoEnv(gym.Env):
         self.observation_space = spaces.Box(low=-1, high=1, shape=(2 * self.n_scatterers,), dtype=np.float32) 
         
         # MEEP simulation parameters
-        self.resolution = 25  # pixels/cm
+        self.resolution = 20  # pixels/cm
 
         '''
         a = 0.01  chosen characteristic length = 1cm
@@ -69,17 +75,19 @@ class BilliardTwoEnv(gym.Env):
         # Meep use the 'last object wins' principle, ie, if multiple objects overlap, later objects in the list take precedence. 
         # Allow overlapping simplifies implementation and help explore more diverse configurations.
         # Initial scatterer positions, this is normalized position !!!
-        self.scatter_pos = self._generate_initial_positions(self.seed)
+        self.scatter_pos = self._generate_initial_positions()
         
         # For tracking progress
         self.best_error = float('inf')
         self.best_positions = None
         self.step_count = 0
-    
-    def _generate_initial_positions(self, seed=42):
+
+
+    def _generate_initial_positions(self, seed=None):
         # Generate and normalize random positions
-        np.random.seed(seed)
-        return np.random.uniform(low=-1, high=1, size=(2*self.n_scatterers,))
+        # Use self.np_random instead of np.random to ensure proper seeding
+        # self.np_random is provided by gym.Env and is properly seeded during reset()
+        return self.np_random.uniform(low=-1, high=1, size=(2*self.n_scatterers,)).astype(np.float32)
 
     def _create_base_geometry(self):
         # Create the base geometry (billiard and waveguides)
@@ -282,7 +290,7 @@ class BilliardTwoEnv(gym.Env):
         
         return np.array(t_matrix)
     
-    def _calculate_reward(self, tm):
+    def _calculate_reward(self, tm) -> tuple[np.float32, np.float32]:
         # Target relationship: tm[0] * 1.73 = tm[1], expect a rank-1 TM
         error = np.sum(np.abs(tm[0] * 1.73 - tm[1])**2) 
         
@@ -318,45 +326,55 @@ class BilliardTwoEnv(gym.Env):
         # Print progress every 10 steps
         if self.step_count % 10 == 0:
             print(f"Step {self.step_count}, Error: {error:.6f}, Reward: {reward:.6f}")
-            
+
         return self.scatter_pos, reward, terminated, truncated, info
 
     # at the beginning of each episode, reset env
-    def reset(self, seed=None) -> tuple[spaces.Box, dict[str, typing.Any]]:
+    def reset(self, seed=None, options=None) -> tuple[spaces.Box, dict[str, typing.Any]]:
         """
         Reset the environment.
 
         Args:
             seed (int, optional): Random seed for reproducibility
-            options (dict, optional): Additional options for reset
+            options: None
 
         Returns:
             tuple: (observation, info_dict)
         """
-        # Set seed if provided
-        if seed is not None:
-            np.random.seed(seed)
+        # Important: Call super().reset() first to properly seed the environment
+        super().reset(seed=seed)
 
         # Optionally reset to best known positions with small perturbation
-        if self.best_positions is not None and np.random.random() < 0.7:
-            # 70% chance to use best positions with noise
-            noise = np.random.normal(0, 0.05, size=(2*self.n_scatterers,))  # Small Gaussian noise
+        if self.best_positions is not None and self.np_random.random() < 0.7:
+            # 70% chance to use best positions with small Gaussian noise
+            noise = self.np_random.normal(0, 0.05, size=(2*self.n_scatterers,)).astype(np.float32)
             self.scatter_pos = np.clip(self.best_positions + noise, -1, 1)
         else:
             # 30% chance to generate new random positions
-            self.scatter_pos = self._generate_initial_positions(seed=seed)
+            self.scatter_pos = self._generate_initial_positions(seed)
+
+        self.scatter_pos = self._generate_initial_positions()
 
         self.step_count = 0
 
         # Create info dictionary
-        info = {
-            "scatter_positions": self.scatter_pos.copy(),
-            "reset_seed": seed
-        }
+        info = {}
 
         # Return both observation and info dict
         return self.scatter_pos, info
-    
+
+    def get_state(self) -> dict[str, typing.Any]:
+        """Get the current state of the environment."""
+        return {
+            'scatter_pos': self.scatter_pos.copy(),
+            'step_count': self.step_count,
+        }
+
+    def set_state(self, state: dict[str, typing.Any]) -> None:
+        """Set the current state of the environment."""
+        self.scatter_pos = state['scatter_pos'].copy()
+        self.step_count = state['step_count']
+
     def render(self):
         # Visualize current configuration
         actual_positions = []
@@ -403,6 +421,32 @@ class BilliardTwoEnv(gym.Env):
         plt.show()
 
 if __name__ == "__main__":
-    env = BilliardTwoEnv(seed=55555)
-    print(env._calculate_tm(env.scatter_pos))
+    # env = BilliardTwoEnv()
+    env = gym.make('BilliardTwoEnv-v0')
+    env.reset(seed=5)
+    # print("check env begin")
+    # check_env(env.unwrapped)
+    # print("check env end")
+
+    # print(env.unwrapped._calculate_tm(env.unwrapped.scatter_pos))
     env.render()
+
+    print(env.unwrapped.get_state())
+    # # Test episode loop
+    # episodes = 2
+    # for episode in range(episodes):
+    #     obs, _ = env.reset(seed=episode)
+    #     done = False
+    #     truncated = False
+    #     total_reward = 0
+    #
+    #     print(f"\nEpisode {episode + 1}")
+    #     while not (done or truncated):
+    #         action = env.action_space.sample()  # Replace with your action selection
+    #         obs, reward, done, truncated, info = env.step(action)
+    #         total_reward += reward
+    #
+    #         if episode == 0:  # Render only first episode
+    #             env.render()
+    #
+    #     print(f"Episode {episode + 1} finished with reward: {total_reward}")
