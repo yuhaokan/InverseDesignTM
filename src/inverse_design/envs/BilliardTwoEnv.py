@@ -12,10 +12,6 @@ from stable_baselines3.common.vec_env import DummyVecEnv
 # Suppress logging
 mp.verbosity(0)
 
-import warnings
-warnings.simplefilter("ignore", category=Warning)
-warnings.filterwarnings('ignore', message='.*grid*')
-
 # register(
 #     id='BilliardTwoEnv',                         
 #     entry_point='BilliardTwoEnv:BilliardTwoEnv',        # module_name:class_name
@@ -26,7 +22,7 @@ class BilliardTwoEnv(gym.Env):
     def __init__(self):
         super().__init__()
 
-        self.max_step = 50  ############################## for each episode, max steps we allowed
+        self.max_step = 150  ############################## for each episode, max steps we allowed
         
         self.n_scatterers = 20
         # Define action and observation spaces
@@ -38,7 +34,7 @@ class BilliardTwoEnv(gym.Env):
         self.observation_space = spaces.Box(low=-1, high=1, shape=(2 * self.n_scatterers,), dtype=np.float32) 
         
         # MEEP simulation parameters
-        self.resolution = 20  # pixels/cm
+        self.resolution = 15  # pixels/cm
 
         '''
         a = 0.01  chosen characteristic length = 1cm
@@ -48,7 +44,7 @@ class BilliardTwoEnv(gym.Env):
         '''
         self.fsrc = 15.0 / 30
 
-        self.sx = 25
+        self.sx = 15
         self.sy = 15
         self.scatterer_radius = 0.5
 
@@ -257,6 +253,23 @@ class BilliardTwoEnv(gym.Env):
                 size=mp.Vector3(0, self.waveguide_width-0.1)
             )
         )
+
+        # # monitor input
+        # mode_monitor_left_top = sim.add_mode_monitor(
+        #     self.fsrc, 0, 1,
+        #     mp.ModeRegion(
+        #         center=mp.Vector3(-self.sx/2-self.waveguide_length+self.pml_thickness+3, self.waveguide_offset),
+        #         size=mp.Vector3(0, self.waveguide_width-0.1)
+        #     )
+        # )
+
+        # mode_monitor_left_bottom = sim.add_mode_monitor(
+        #     self.fsrc, 0, 1,
+        #     mp.ModeRegion(
+        #         center=mp.Vector3(-self.sx/2-self.waveguide_length+self.pml_thickness+3, -self.waveguide_offset),
+        #         size=mp.Vector3(0, self.waveguide_width-0.1)
+        #     )
+        # )
         
         if not run:
             plt.figure()
@@ -277,7 +290,21 @@ class BilliardTwoEnv(gym.Env):
                 mode_monitor_right_bottom, [1],
                 eig_parity=mp.EVEN_Z + mp.ODD_Y
             )
+
+            # mode_data_input_top = sim.get_eigenmode_coefficients(
+            #     mode_monitor_left_top, [1],
+            #     eig_parity=mp.EVEN_Z + mp.ODD_Y
+            # )
             
+            # mode_data_input_bottom = sim.get_eigenmode_coefficients(
+            #     mode_monitor_left_bottom, [1],
+            #     eig_parity=mp.EVEN_Z + mp.ODD_Y
+            # )
+            
+            # print('input strength')
+            # print(mode_data_input_top.alpha[0,0,0])
+            # print(mode_data_input_bottom.alpha[0,0,0])
+
             t_11 = mode_data_top.alpha[0,0,0]
             t_12 = mode_data_bottom.alpha[0,0,0]
             
@@ -298,7 +325,10 @@ class BilliardTwoEnv(gym.Env):
     
     def _calculate_reward(self, tm) -> tuple[np.float32, np.float32]:
         # Target relationship: tm[0] * 1.73 = tm[1], expect a rank-1 TM
-        error = np.sum(np.abs(tm[0] * 1.73 - tm[1])**2) 
+        ratio = 1.73
+        # error = np.sum((np.abs(tm[0] / tm[1]) * ratio - 1)**2) 
+
+        error = np.mean(np.abs(tm[0] * ratio - tm[1]))
         
         # Reward is negative of error (higher reward for lower error)
         reward = -error
@@ -309,7 +339,7 @@ class BilliardTwoEnv(gym.Env):
         self.step_count += 1
 
         # Apply action (small adjustments to positions)
-        scaling_factor = 0.05  # Control adjustment size
+        scaling_factor = 0.001  # Control adjustment size
         self.scatter_pos = np.clip(self.scatter_pos + action * scaling_factor, -1, 1)
         
         # Calculate transmission matrix with new positions
@@ -319,13 +349,13 @@ class BilliardTwoEnv(gym.Env):
         reward, error = self._calculate_reward(tm)
         
         # Check if goal is achieved or max steps reached
-        terminated = error < 0.01         # here we set the max step to be 1000?
+        terminated = error < 0.5         #  5% deviation for 1.73*t11 vs t21, 5% deviation for 1.73*t12 vs t22, error_threshold = 2 * (5%)^2 = 0.005
         
         truncated = self.step_count >= self.max_step
 
         info = {
             "error": error,
-            "target": tm[0] * 1.73 - tm[1],
+            "scatter_pos": self.scatter_pos,
             "step": self.step_count
         }
         
@@ -427,20 +457,23 @@ class BilliardTwoEnv(gym.Env):
         plt.show()
 
 if __name__ == "__main__":
-    # env = BilliardTwoEnv()
+    env = BilliardTwoEnv()
     # # env = gym.make('MyEnv-v0')
-    # env.reset(seed=5)
+    env.reset(seed=55)
     # print("check env begin")
     # check_env(env)
     # print("check env end")
 
-    # # print(env.unwrapped._calculate_tm(env.unwrapped.scatter_pos))
+    # print(env._calculate_tm(env.scatter_pos))
+
+    tm_sample = env._calculate_tm(env.scatter_pos)
+    print(env._calculate_reward(tm_sample))
     # env.render()
 
     # print(env.unwrapped.get_state())
 
-    env2 = DummyVecEnv([lambda: BilliardTwoEnv()])
-    print(env2.get_attr('n_scatterers'))
+    # env2 = DummyVecEnv([lambda: BilliardTwoEnv()])
+    # print(env2.get_attr('n_scatterers'))
     
     # # Test episode loop
     # episodes = 2
