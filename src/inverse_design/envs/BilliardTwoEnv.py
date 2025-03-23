@@ -7,6 +7,7 @@ from gymnasium.utils.env_checker import check_env
 import matplotlib.pyplot as plt
 from matplotlib.patches import Rectangle, Circle
 import typing
+from stable_baselines3.common.vec_env import DummyVecEnv
 
 # Suppress logging
 mp.verbosity(0)
@@ -25,7 +26,7 @@ class BilliardTwoEnv(gym.Env):
     def __init__(self):
         super().__init__()
 
-        self.max_step = 100000  ##############################
+        self.max_step = 50  ############################## for each episode, max steps we allowed
         
         self.n_scatterers = 20
         # Define action and observation spaces
@@ -426,17 +427,20 @@ class BilliardTwoEnv(gym.Env):
         plt.show()
 
 if __name__ == "__main__":
-    env = BilliardTwoEnv()
-    # env = gym.make('MyEnv-v0')
-    env.reset(seed=5)
-    print("check env begin")
-    check_env(env)
-    print("check env end")
+    # env = BilliardTwoEnv()
+    # # env = gym.make('MyEnv-v0')
+    # env.reset(seed=5)
+    # print("check env begin")
+    # check_env(env)
+    # print("check env end")
 
-    # print(env.unwrapped._calculate_tm(env.unwrapped.scatter_pos))
-    env.render()
+    # # print(env.unwrapped._calculate_tm(env.unwrapped.scatter_pos))
+    # env.render()
 
-    print(env.unwrapped.get_state())
+    # print(env.unwrapped.get_state())
+
+    env2 = DummyVecEnv([lambda: BilliardTwoEnv()])
+    print(env2.get_attr('n_scatterers'))
     
     # # Test episode loop
     # episodes = 2
