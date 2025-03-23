@@ -11,18 +11,23 @@ import typing
 # Suppress logging
 mp.verbosity(0)
 
-register(
-    id='BilliardTwoEnv-v0',                         
-    entry_point='BilliardTwoEnv:BilliardTwoEnv',        # module_name:class_name
-)
+import warnings
+warnings.simplefilter("ignore", category=Warning)
+warnings.filterwarnings('ignore', message='.*grid*')
+
+# register(
+#     id='BilliardTwoEnv',                         
+#     entry_point='BilliardTwoEnv:BilliardTwoEnv',        # module_name:class_name
+# )
+
 
 class BilliardTwoEnv(gym.Env):
     def __init__(self):
         super().__init__()
 
-        self.max_step = 3  ##############################
+        self.max_step = 100000  ##############################
         
-        self.n_scatterers = 5
+        self.n_scatterers = 20
         # Define action and observation spaces
 
         # both the action & obs space = n_scatterers * n_dim
@@ -42,8 +47,8 @@ class BilliardTwoEnv(gym.Env):
         '''
         self.fsrc = 15.0 / 30
 
-        self.sx = 20
-        self.sy = 10
+        self.sx = 25
+        self.sy = 15
         self.scatterer_radius = 0.5
 
         self.sx_scatterer = self.sx - 2 * self.scatterer_radius # range of scatterer center 
@@ -421,17 +426,18 @@ class BilliardTwoEnv(gym.Env):
         plt.show()
 
 if __name__ == "__main__":
-    # env = BilliardTwoEnv()
-    env = gym.make('BilliardTwoEnv-v0')
+    env = BilliardTwoEnv()
+    # env = gym.make('MyEnv-v0')
     env.reset(seed=5)
-    # print("check env begin")
-    # check_env(env.unwrapped)
-    # print("check env end")
+    print("check env begin")
+    check_env(env)
+    print("check env end")
 
     # print(env.unwrapped._calculate_tm(env.unwrapped.scatter_pos))
     env.render()
 
     print(env.unwrapped.get_state())
+    
     # # Test episode loop
     # episodes = 2
     # for episode in range(episodes):
