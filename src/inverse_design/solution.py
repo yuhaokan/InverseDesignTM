@@ -16,33 +16,12 @@ position_dir = "./positions"
 os.makedirs(position_dir, exist_ok=True)
 os.makedirs(log_dir, exist_ok=True)
 
+'''
+tensorboard --logdir ./logs
+python load_pos.py
+'''
 
 from stable_baselines3.common.callbacks import BaseCallback
-
-class EarlyStoppingCallback(BaseCallback):
-    def __init__(self, error_threshold=0.5, verbose=0):
-        super().__init__(verbose)
-        self.error_threshold = error_threshold
-        self.best_pos = None
-        self.best_error = float('inf')
-
-    def _on_step(self):
-        # Assuming your environment returns the error in the info dict
-        error = self.locals['infos'][0].get('error', float('inf'))
-        pos = self.locals['infos'][0].get('scatter_pos')
-       
-        # Keep track of the best position found
-        if error < self.best_error:
-            self.best_error = error
-            self.best_pos = pos
-           
-        # Stop if we find a satisfactory solution
-        if error < self.error_threshold:
-            print(f"Found satisfactory solution with error: {error}")
-            print(f"Scatter position: {pos}")
-            return False  # This stops the training
-           
-        return True
     
 class SaveBestPosCallback(BaseCallback):
     def __init__(self, error_threshold=0.5, save_freq=100, save_path=position_dir, verbose=0):
@@ -52,10 +31,6 @@ class SaveBestPosCallback(BaseCallback):
         self.save_path = save_path
         self.best_pos = None
         self.best_error = float('inf')
-       
-        # Create save directory if it doesn't exist
-        if not os.path.exists(save_path):
-            os.makedirs(save_path)
 
     def _on_step(self):
         # Get current error and position from info
@@ -144,9 +119,6 @@ def train(env_name, algo_name):
 
     # Initialize the model
     model = sb3_class('MlpPolicy', env, verbose=1, device='cuda', tensorboard_log=log_dir)
-   
-    # Create callback for early stopping
-    # callback = EarlyStoppingCallback(error_threshold)
 
     # Create callback
     callback = SaveBestPosCallback(
