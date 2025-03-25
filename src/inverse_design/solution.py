@@ -4,15 +4,16 @@ import stable_baselines3
 from stable_baselines3.common.callbacks import StopTrainingOnNoModelImprovement, StopTrainingOnRewardThreshold, EvalCallback
 from stable_baselines3.common.monitor import Monitor
 from stable_baselines3.common.vec_env import DummyVecEnv
+# from torch.utils.tensorboard import SummaryWriter
 import os
 # import argparse
 
 from envs import BilliardTwoEnv
 
 # Create directories to hold models and logs
-model_dir = "./models"
-log_dir = "./logs"
-position_dir = "./positions"
+model_dir = "/home/user/workplace/InverseDesignTM/src/inverse_design/models"
+log_dir = "/home/user/workplace/InverseDesignTM/src/inverse_design/logs"
+position_dir = "/home/user/workplace/InverseDesignTM/src/inverse_design/positions"
 os.makedirs(position_dir, exist_ok=True)
 os.makedirs(log_dir, exist_ok=True)
 
@@ -23,6 +24,29 @@ python load_pos.py
 
 from stable_baselines3.common.callbacks import BaseCallback
     
+class TensorboardStepCallback(BaseCallback):
+    def __init__(self, verbose=0):
+        super().__init__(verbose)
+
+    def _on_step(self) -> bool:
+        # Log losses and metrics at each step
+        loss_dict = self.model.logger.name_to_value
+       
+        for key, value in loss_dict.items():
+            self.logger.record(key, value)
+           
+        # Get the most recent reward from the environment
+        # The reward from the last step is stored in self.locals
+        step_reward = self.locals['rewards'][0]  # [0] because we're using VecEnv
+
+        # Log the step reward using logger.record
+        self.logger.record("rewards/step_reward", step_reward)
+
+        # Make sure to dump the logs
+        self.logger.dump(self.num_timesteps)
+
+        return True
+
 class SaveBestPosCallback(BaseCallback):
     def __init__(self, error_threshold=0.5, save_freq=100, save_path=position_dir, verbose=0):
         super().__init__(verbose)
@@ -83,42 +107,13 @@ class SaveBestPosCallback(BaseCallback):
         np.save(checkpoint_path, save_dict)
 
 
-def train_old(env_name, algo_name):
-    model = sb3_class('MlpPolicy', env, verbose=1, device='cuda', tensorboard_log=log_dir)
-
-    # Stop training when mean reward reaches reward_threshold
-    callback_on_best = StopTrainingOnRewardThreshold(reward_threshold=-1, verbose=1)
-
-    # Stop training when model shows no improvement after max_no_improvement_evals, 
-    # but do not start counting towards max_no_improvement_evals until after min_evals.
-    # Number of timesteps before possibly stopping training = min_evals * eval_freq (below)
-    stop_train_callback = StopTrainingOnNoModelImprovement(max_no_improvement_evals=5, min_evals=20, verbose=1)
-
-    # debug_callback = DebugCallback()
-
-    eval_callback = EvalCallback(
-        env, 
-        eval_freq=25, # how often to perform evaluation i.e. every 10000 timesteps.
-        callback_on_new_best=callback_on_best, 
-        callback_after_eval=stop_train_callback, 
-        verbose=1, 
-        best_model_save_path=os.path.join(model_dir, f"{env_name}_{algo_name}"),
-    )
-    
-    """
-    total_timesteps: pass in a very large number to train (almost) indefinitely.
-    tb_log_name: create log files with the name [gym env name]_[sb3 algorithm] i.e. Pendulum_v1_SAC
-    callback: pass in reference to a callback fuction above
-    """
-    model.learn(total_timesteps=int(1e7), tb_log_name=f"{env_name}_{algo_name}", callback=eval_callback)
-
 
 def train(env_name, algo_name):
 
-    error_threshold = 0.5
+    error_threshold = 0.1
 
     # Initialize the model
-    model = sb3_class('MlpPolicy', env, verbose=1, device='cuda', tensorboard_log=log_dir)
+    model = sb3_class('MlpPolicy', env, verbose=1, device='cpu', gamma=0, tensorboard_log=log_dir)
 
     # Create callback
     callback = SaveBestPosCallback(
@@ -126,12 +121,12 @@ def train(env_name, algo_name):
         save_freq=1000,  # Save checkpoint every 1000 steps
         verbose=1
     )
-   
+    tensorboardStepCallback = TensorboardStepCallback()
     try:
         # Train until we find a satisfactory solution
         model.learn(
             total_timesteps=1000000,  # Maximum steps if solution isn't found
-            callback=callback,
+            callback=[callback, tensorboardStepCallback],
             tb_log_name=f"{env_name}_{algo_name}"
         )
     except Exception as e:
@@ -160,8 +155,8 @@ if __name__ == '__main__':
     # sb3_class = getattr(stable_baselines3, args.sb3_algo)
 
 
-    env_name = "BilliardTwoEnv"
-    algo_name = "SAC"
+    env_name = "BilliardTwoEnvRank1"
+    algo_name = "PPO"
 
     sb3_class = getattr(stable_baselines3, algo_name)
 

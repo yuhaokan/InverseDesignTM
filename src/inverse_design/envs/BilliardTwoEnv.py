@@ -22,7 +22,7 @@ class BilliardTwoEnv(gym.Env):
     def __init__(self):
         super().__init__()
 
-        self.max_step = 150  ############################## for each episode, max steps we allowed
+        self.max_step = 1e5  ############################## for each episode, max steps we allowed
         
         self.n_scatterers = 20
         # Define action and observation spaces
@@ -325,10 +325,11 @@ class BilliardTwoEnv(gym.Env):
     
     def _calculate_reward(self, tm) -> tuple[np.float32, np.float32]:
         # Target relationship: tm[0] * 1.73 = tm[1], expect a rank-1 TM
-        ratio = 1.73
+        ratio = 1.41
         # error = np.sum((np.abs(tm[0] / tm[1]) * ratio - 1)**2) 
 
-        error = np.mean(np.abs(tm[0] * ratio - tm[1]))
+        # error = np.mean(np.abs(tm[0] * ratio - tm[1]))
+        error = np.abs(tm[0][0] * tm[1][1] - tm[0][1] * tm[1][0])
         
         # Reward is negative of error (higher reward for lower error)
         reward = -error
@@ -349,7 +350,7 @@ class BilliardTwoEnv(gym.Env):
         reward, error = self._calculate_reward(tm)
         
         # Check if goal is achieved or max steps reached
-        terminated = error < 0.5         #  5% deviation for 1.73*t11 vs t21, 5% deviation for 1.73*t12 vs t22, error_threshold = 2 * (5%)^2 = 0.005
+        terminated = error < 0.1         #  5% deviation for 1.73*t11 vs t21, 5% deviation for 1.73*t12 vs t22, error_threshold = 2 * (5%)^2 = 0.005
         
         truncated = self.step_count >= self.max_step
 
