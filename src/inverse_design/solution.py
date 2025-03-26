@@ -155,7 +155,7 @@ if __name__ == '__main__':
     # sb3_class = getattr(stable_baselines3, args.sb3_algo)
 
 
-    env_name = "BilliardTwoEnvRank1"
+    env_name = "BilliardTwoEnvFixedTarget"
     algo_name = "PPO"
 
     sb3_class = getattr(stable_baselines3, algo_name)

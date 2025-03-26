@@ -329,7 +329,10 @@ class BilliardTwoEnv(gym.Env):
         # error = np.sum((np.abs(tm[0] / tm[1]) * ratio - 1)**2) 
 
         # error = np.mean(np.abs(tm[0] * ratio - tm[1]))
-        error = np.abs(tm[0][0] * tm[1][1] - tm[0][1] * tm[1][0])
+        # error = np.abs(tm[0][0] * tm[1][1] - tm[0][1] * tm[1][0])
+
+        targetTM = np.array([[-2.28661274+0.54642883j, -7.33391126-0.31989986j], [4.91357518-2.36528964j,  3.44673878+3.01154595j]])
+        error = np.sum(np.abs(tm - targetTM))
         
         # Reward is negative of error (higher reward for lower error)
         reward = -error
@@ -350,7 +353,7 @@ class BilliardTwoEnv(gym.Env):
         reward, error = self._calculate_reward(tm)
         
         # Check if goal is achieved or max steps reached
-        terminated = error < 0.1         #  5% deviation for 1.73*t11 vs t21, 5% deviation for 1.73*t12 vs t22, error_threshold = 2 * (5%)^2 = 0.005
+        terminated = error < 0.01         #  5% deviation for 1.73*t11 vs t21, 5% deviation for 1.73*t12 vs t22, error_threshold = 2 * (5%)^2 = 0.005
         
         truncated = self.step_count >= self.max_step
 
@@ -468,6 +471,7 @@ if __name__ == "__main__":
     # print(env._calculate_tm(env.scatter_pos))
 
     tm_sample = env._calculate_tm(env.scatter_pos)
+    print(tm_sample)
     print(env._calculate_reward(tm_sample))
     # env.render()
 
