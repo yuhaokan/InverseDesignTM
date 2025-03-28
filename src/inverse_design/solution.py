@@ -113,7 +113,8 @@ def train(env_name, algo_name):
     error_threshold = 0.1
 
     # Initialize the model
-    model = sb3_class('MlpPolicy', env, verbose=1, device='cpu', gamma=0, tensorboard_log=log_dir)
+    # batch_size=64
+    model = sb3_class('MlpPolicy', env, verbose=1, device='cpu', n_steps=64, gamma=0.99, tensorboard_log=log_dir)
 
     # Create callback
     callback = SaveBestPosCallback(
@@ -155,7 +156,7 @@ if __name__ == '__main__':
     # sb3_class = getattr(stable_baselines3, args.sb3_algo)
 
 
-    env_name = "BilliardTwoEnvFixedTarget"
+    env_name = "BilliardTwoEnv2FixedTarget"
     algo_name = "PPO"
 
     sb3_class = getattr(stable_baselines3, algo_name)

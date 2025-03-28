@@ -22,7 +22,7 @@ class BilliardTwoEnv(gym.Env):
     def __init__(self):
         super().__init__()
 
-        self.max_step = 1e5  ############################## for each episode, max steps we allowed
+        self.max_step = 200  ############################## for each episode, max steps we allowed
         
         self.n_scatterers = 20
         # Define action and observation spaces
@@ -352,6 +352,11 @@ class BilliardTwoEnv(gym.Env):
         # Calculate reward and error
         reward, error = self._calculate_reward(tm)
         
+        # Update best positions if current error is lower than best error
+        if error < self.best_error:
+            self.best_error = error
+            self.best_positions = self.scatter_pos.copy()  # Make a copy to prevent reference issues
+
         # Check if goal is achieved or max steps reached
         terminated = error < 0.01         #  5% deviation for 1.73*t11 vs t21, 5% deviation for 1.73*t12 vs t22, error_threshold = 2 * (5%)^2 = 0.005
         
