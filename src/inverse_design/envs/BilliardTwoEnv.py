@@ -308,6 +308,8 @@ class BilliardTwoEnv(gym.Env):
             t_11 = mode_data_top.alpha[0,0,0]
             t_12 = mode_data_bottom.alpha[0,0,0]
             
+            sim.reset_meep() # Explicitly reset MEEP to free memory
+            
             return [t_11, t_12]
     
     def _calculate_tm(self, normalized_scatterers_positions):
@@ -398,15 +400,11 @@ class BilliardTwoEnv(gym.Env):
             # 30% chance to generate new random positions
             self.scatter_pos = self._generate_initial_positions(seed)
 
-        self.scatter_pos = self._generate_initial_positions()
 
         self.step_count = 0
 
-        # Create info dictionary
-        info = {}
-
         # Return both observation and info dict
-        return self.scatter_pos, info
+        return self.scatter_pos, {}
 
     def get_state(self) -> dict[str, typing.Any]:
         """Get the current state of the environment."""

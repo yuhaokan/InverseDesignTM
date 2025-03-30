@@ -1,10 +1,12 @@
-import gymnasium as gym
 import numpy as np
 import stable_baselines3
 from stable_baselines3 import PPO
-from stable_baselines3.common.callbacks import StopTrainingOnNoModelImprovement, StopTrainingOnRewardThreshold, EvalCallback
+# from stable_baselines3.common.callbacks import StopTrainingOnNoModelImprovement, StopTrainingOnRewardThreshold, EvalCallback
 from stable_baselines3.common.monitor import Monitor
-from stable_baselines3.common.vec_env import DummyVecEnv
+# from stable_baselines3.common.vec_env import DummyVecEnv
+from stable_baselines3.common.vec_env import SubprocVecEnv
+from stable_baselines3.common.utils import get_linear_fn
+import torch
 # from torch.utils.tensorboard import SummaryWriter
 # import argparse
 
@@ -96,13 +98,21 @@ def train(env_name, algo_name):
 
     error_threshold = 0.1
 
+    policy_kwargs = dict(
+        net_arch=dict(pi=[256, 256], vf=[256, 256]),
+        activation_fn=torch.nn.ReLU  # ReLU often works better than tanh for physics problems
+    )
+
+    # Linear learning rate decay
+    lr_schedule = get_linear_fn(start=3e-4, end=1e-5, end_fraction=0.8)
     # Initialize the model
     # batch_size=64
     model = PPO('MlpPolicy', env, verbose=1, device='cpu', 
-                                  policy_kwargs={"net_arch": [256, 256]},  # Larger policy network
-                                  n_steps=512, batch_size=128, 
-                                  n_epochs=5, clip_range=0.2,
-                                  gamma=0.999, tensorboard_log=log_dir)
+                learning_rate=lr_schedule,
+                policy_kwargs=policy_kwargs,  # Larger policy network
+                n_steps=512, batch_size=128, 
+                n_epochs=5, clip_range=0.2,
+                gamma=0.999, tensorboard_log=log_dir)
 
     # Create callback
     callback = SaveBestPosCallback(
@@ -131,7 +141,6 @@ def train(env_name, algo_name):
         return callback.best_pos  # Return best found even if not below threshold
 
 
-from stable_baselines3.common.vec_env import SubprocVecEnv
 
 # Define the environment creation function
 def make_env():
@@ -168,7 +177,7 @@ if __name__ == '__main__':
 
     ## Create multiple environments in parallel
     # n_envs is the number of parallel environments you want to run
-    n_envs = 6  # You can adjust this number based on your CPU cores
+    n_envs = 4  # You can adjust this number based on your CPU cores
     env = SubprocVecEnv([make_env() for _ in range(n_envs)])
 
     train(env_name, algo_name)
