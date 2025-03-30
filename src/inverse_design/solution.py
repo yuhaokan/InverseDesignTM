@@ -6,15 +6,19 @@ from stable_baselines3.common.callbacks import StopTrainingOnNoModelImprovement,
 from stable_baselines3.common.monitor import Monitor
 from stable_baselines3.common.vec_env import DummyVecEnv
 # from torch.utils.tensorboard import SummaryWriter
-import os
 # import argparse
 
 from envs import BilliardTwoEnv
 
-# Create directories to hold models and logs
-model_dir = "/home/user/workplace/InverseDesignTM/src/inverse_design/models"
-log_dir = "/home/user/workplace/InverseDesignTM/src/inverse_design/logs"
-position_dir = "/home/user/workplace/InverseDesignTM/src/inverse_design/positions"
+import os
+# Get the directory where the current script is located
+current_dir = os.path.dirname(os.path.abspath(__file__))
+
+# Create directories relative to the script location
+model_dir = os.path.join(current_dir, "models")
+log_dir = os.path.join(current_dir, "logs")
+position_dir = os.path.join(current_dir, "positions")
+
 os.makedirs(position_dir, exist_ok=True)
 os.makedirs(log_dir, exist_ok=True)
 
