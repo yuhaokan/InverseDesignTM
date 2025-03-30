@@ -1,6 +1,7 @@
 import gymnasium as gym
 import numpy as np
 import stable_baselines3
+from stable_baselines3 import PPO
 from stable_baselines3.common.callbacks import StopTrainingOnNoModelImprovement, StopTrainingOnRewardThreshold, EvalCallback
 from stable_baselines3.common.monitor import Monitor
 from stable_baselines3.common.vec_env import DummyVecEnv
@@ -37,10 +38,11 @@ class TensorboardStepCallback(BaseCallback):
            
         # Get the most recent reward from the environment
         # The reward from the last step is stored in self.locals
-        step_reward = self.locals['rewards'][0]  # [0] because we're using VecEnv
+        step_rewards = self.locals['rewards']  # This is now an array with values from all environments
 
-        # Log the step reward using logger.record
-        self.logger.record("rewards/step_reward", step_reward)
+        # Log the mean & max step reward using logger.record
+        self.logger.record("rewards/step_reward_mean", np.mean(step_rewards))
+        self.logger.record("rewards/step_reward_max", np.max(step_rewards))
 
         # Make sure to dump the logs
         self.logger.dump(self.num_timesteps)
@@ -57,29 +59,21 @@ class SaveBestPosCallback(BaseCallback):
         self.best_error = float('inf')
 
     def _on_step(self):
-        # Get current error and position from info
-        error = self.locals['infos'][0].get('error', float('inf'))
-        current_pos = self.locals['infos'][0].get('scatter_pos')
-       
-        # Update best position if we found a better error
-        if error < self.best_error:
-            self.best_error = error
-            self.best_pos = current_pos
-           
-            # Save the new best position
-            self._save_best_pos()
-           
-            # if self.verbose > 0:
-            #     print(f"New best error: {self.best_error:.6f}")
-            #     print(f"New best position: {self.best_pos}")
-
-        # Save periodically regardless of improvement
-        # if self.n_calls % self.save_freq == 0:
-        #     self._save_checkpoint()
+        # Check all environments in the batch
+        for _, info in enumerate(self.locals['infos']):
+            error = info.get('error', float('inf'))
+            current_pos = info.get('scatter_pos')
+            
+            # Update best position if we found a better error
+            if error < self.best_error and current_pos is not None:
+                self.best_error = error
+                self.best_pos = current_pos.copy()
+                self._save_best_pos()
+                print(f"New best error: {self.best_error:.6f}")
 
         # Stop if we find a satisfactory solution
-        if error < self.error_threshold:
-            print(f"Found solution below threshold! Error: {error:.6f}")
+        if self.best_error < self.error_threshold:
+            print(f"Found solution below threshold! Error: {self.best_error:.6f}")
             return False
 
         return True
@@ -93,20 +87,6 @@ class SaveBestPosCallback(BaseCallback):
         }
         np.save(os.path.join(self.save_path, 'best_pos.npy'), save_dict)
 
-    def _save_checkpoint(self):
-        """Save periodic checkpoint with timestamp"""
-        save_dict = {
-            'best_pos': self.best_pos,
-            'best_error': self.best_error,
-            'n_calls': self.n_calls
-        }
-        checkpoint_path = os.path.join(
-            self.save_path,
-            f'checkpoint_{self.n_calls:08d}.npy'
-        )
-        np.save(checkpoint_path, save_dict)
-
-
 
 def train(env_name, algo_name):
 
@@ -114,7 +94,11 @@ def train(env_name, algo_name):
 
     # Initialize the model
     # batch_size=64
-    model = sb3_class('MlpPolicy', env, verbose=1, device='cpu', n_steps=64, gamma=0.99, tensorboard_log=log_dir)
+    model = PPO('MlpPolicy', env, verbose=1, device='cpu', 
+                                  policy_kwargs={"net_arch": [256, 256]},  # Larger policy network
+                                  n_steps=512, batch_size=128, 
+                                  n_epochs=5, clip_range=0.2,
+                                  gamma=0.999, tensorboard_log=log_dir)
 
     # Create callback
     callback = SaveBestPosCallback(
@@ -143,6 +127,16 @@ def train(env_name, algo_name):
         return callback.best_pos  # Return best found even if not below threshold
 
 
+from stable_baselines3.common.vec_env import SubprocVecEnv
+
+# Define the environment creation function
+def make_env():
+    def _init():
+        env = BilliardTwoEnv()
+        env = Monitor(env, log_dir)
+        return env
+    return _init
+
 if __name__ == '__main__':
     # Parse command line inputs
     # parser = argparse.ArgumentParser(description='Train or test model.')
@@ -156,15 +150,21 @@ if __name__ == '__main__':
     # sb3_class = getattr(stable_baselines3, args.sb3_algo)
 
 
-    env_name = "BilliardTwoEnv2FixedTarget"
+    env_name = "BilliardTwoEnv2FixedTarget_pp"
     algo_name = "PPO"
 
     sb3_class = getattr(stable_baselines3, algo_name)
 
-    # env = gym.make(env_name)
 
-    env = BilliardTwoEnv()
-    env = Monitor(env, log_dir)
-    env = DummyVecEnv([lambda: env])
-    # env = gym.wrappers.RecordVideo(env, video_folder=recording_dir, episode_trigger = lambda x: x % 10000 == 0)
+    ## without parallel computing
+    # env = BilliardTwoEnv()
+    # env = Monitor(env, log_dir)
+    # env = DummyVecEnv([lambda: env])
+
+
+    ## Create multiple environments in parallel
+    # n_envs is the number of parallel environments you want to run
+    n_envs = 6  # You can adjust this number based on your CPU cores
+    env = SubprocVecEnv([make_env() for _ in range(n_envs)])
+
     train(env_name, algo_name)

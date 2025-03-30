@@ -22,7 +22,7 @@ class BilliardTwoEnv(gym.Env):
     def __init__(self):
         super().__init__()
 
-        self.max_step = 200  ############################## for each episode, max steps we allowed
+        self.max_step = 2048  ############################## for each episode, max steps we allowed
         
         self.n_scatterers = 20
         # Define action and observation spaces
@@ -364,13 +364,13 @@ class BilliardTwoEnv(gym.Env):
 
         info = {
             "error": error,
-            "scatter_pos": self.scatter_pos,
+            "scatter_pos": self.scatter_pos.copy(),
             "step": self.step_count
         }
         
         # Print progress every 10 steps
-        if self.step_count % 10 == 0:
-            print(f"Step {self.step_count}, Error: {error:.6f}, Reward: {reward:.6f}")
+        # if self.step_count % 10 == 0:
+        #     print(f"Step {self.step_count}, Error: {error:.6f}, Reward: {reward:.6f}")
 
         return self.scatter_pos, reward, terminated, truncated, info
 
