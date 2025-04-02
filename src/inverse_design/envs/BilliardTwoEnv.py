@@ -34,7 +34,7 @@ class BilliardTwoEnv(gym.Env):
         self.observation_space = spaces.Box(low=-1, high=1, shape=(2 * self.n_scatterers,), dtype=np.float32) 
         
         # MEEP simulation parameters
-        self.resolution = 15  # pixels/cm
+        self.resolution = 20  # pixels/cm
 
         '''
         a = 0.01  chosen characteristic length = 1cm
@@ -305,6 +305,15 @@ class BilliardTwoEnv(gym.Env):
             # print(mode_data_input_top.alpha[0,0,0])
             # print(mode_data_input_bottom.alpha[0,0,0])
 
+            plt.figure()
+            # sim.plot2D(fields=mp.Ex)
+            field_func = lambda x: (np.abs(x)) # lambda x: 20*np.log10(np.abs(x))
+            sim.plot2D(fields=mp.Ex,
+                    field_parameters={'alpha':1, 'cmap':'hsv', 'interpolation':'spline36', 'post_process':field_func},
+                    boundary_parameters={'hatch':'o', 'linewidth':1.5, 'facecolor':'y', 'edgecolor':'b', 'alpha':0.3})
+            plt.show()
+            # self.plot_field_intensity(sim, component=mp.Hz)
+
             t_11 = mode_data_top.alpha[0,0,0]
             t_12 = mode_data_bottom.alpha[0,0,0]
             
@@ -461,6 +470,28 @@ class BilliardTwoEnv(gym.Env):
         ax.set_title(f'Current Scatterer Configuration (Step {self.step_count})')
         
         plt.tight_layout()
+        plt.show()
+
+    def plot_field_intensity(self, sim, component=mp.Ez):
+        output_plane=mp.Volume(center=mp.Vector3(), 
+                               size=mp.Vector3(self.sx + 2*self.waveguide_length, self.sy + 2*self.metal_thickness))
+        
+        # Get the field data
+        field_data = sim.get_array(center=output_plane.center, size=output_plane.size, component=component)
+        print(np.shape(field_data))
+        # Calculate intensity (|E|²)
+        intensity = np.abs(field_data)**2
+    
+        # Plot the intensity
+        plt.figure()
+        # plt.imshow(intensity.transpose(), interpolation='spline36', cmap='magma') 
+        plt.imshow(intensity.transpose())
+        plt.colorbar(label='Intensity')
+        plt.title(f'{component} Intensity')
+        # plt.xlabel('x')
+        # plt.ylabel('y')
+        # plt.tight_layout()
+        # plt.savefig(f"{component}_intensity.png")
         plt.show()
 
 if __name__ == "__main__":

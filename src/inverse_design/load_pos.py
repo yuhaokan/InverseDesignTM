@@ -1,11 +1,14 @@
 import os
 import numpy as np
 
-position_dir = "./positions"
+# Get the directory where the current script is located
+current_dir = os.path.dirname(os.path.abspath(__file__))
+position_dir = os.path.join(current_dir, "positions")
+
 
 # To load the best position later:
 def load_best_pos(save_path=position_dir):
-    best_pos_path = os.path.join(save_path, 'best_pos.npy')
+    best_pos_path = os.path.join(save_path, 'best_pos_rank1_ppo_2.npy')
     if os.path.exists(best_pos_path):
         saved_dict = np.load(best_pos_path, allow_pickle=True).item()
         return saved_dict['best_pos'], saved_dict['best_error']
