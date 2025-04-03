@@ -227,7 +227,7 @@ class BilliardTwoEnv(gym.Env):
             center=input_port["position"],
             size=mp.Vector3(0, self.waveguide_width-0.1),
             eig_band=self.mode_num,
-            eig_parity=mp.EVEN_Z + mp.ODD_Y  # TE mode
+            eig_parity=mp.EVEN_Z + mp.ODD_Y
         )]
         
         sim = mp.Simulation(
@@ -330,6 +330,129 @@ class BilliardTwoEnv(gym.Env):
             
             return [t_11, t_12]
     
+    def _run_simulation_for_port_v2(self, input_port, geometry):
+        # Create a new simulation for this port
+        cell_size = mp.Vector3(self.sx + 2*self.waveguide_length, self.sy + 2*self.metal_thickness)
+        pml_layers = [mp.PML(self.pml_thickness, direction=mp.X)]
+        
+        sources = [mp.EigenModeSource(
+            mp.ContinuousSource(frequency=self.fsrc),
+            center=input_port["position"],
+            size=mp.Vector3(0, self.waveguide_width-0.1),
+            eig_band=self.mode_num,
+            # eig_parity=mp.ODD_Z + mp.EVEN_Y
+            eig_parity=mp.EVEN_Z + mp.ODD_Y  # Theoretically, EVEN_Z means Ez != 0, however, here, Ez=0
+            # eig_parity=mp.EVEN_Z
+            # eig_parity=mp.ODD_Z
+        )]
+        
+        sim = mp.Simulation(
+            cell_size=cell_size,
+            boundary_layers=pml_layers,
+            geometry=geometry,
+            sources=sources,
+            resolution=self.resolution,
+            dimensions=2
+        )
+        
+        # Add monitors
+        mode_monitor_right_top = sim.add_mode_monitor(
+            self.fsrc, 0, 1,
+            mp.ModeRegion(
+                center=self.output_ports[0]["position"],
+                size=mp.Vector3(0, self.waveguide_width-0.1)
+            )
+        )
+
+        mode_monitor_right_bottom = sim.add_mode_monitor(
+            self.fsrc, 0, 1,
+            mp.ModeRegion(
+                center=self.output_ports[1]["position"],
+                size=mp.Vector3(0, self.waveguide_width-0.1)
+            )
+        )
+
+        # # monitor input
+        # mode_monitor_left_top = sim.add_mode_monitor(
+        #     self.fsrc, 0, 1,
+        #     mp.ModeRegion(
+        #         center=mp.Vector3(-self.sx/2-self.waveguide_length+self.pml_thickness+3, self.waveguide_offset),
+        #         size=mp.Vector3(0, self.waveguide_width-0.1)
+        #     )
+        # )
+
+        # mode_monitor_left_bottom = sim.add_mode_monitor(
+        #     self.fsrc, 0, 1,
+        #     mp.ModeRegion(
+        #         center=mp.Vector3(-self.sx/2-self.waveguide_length+self.pml_thickness+3, -self.waveguide_offset),
+        #         size=mp.Vector3(0, self.waveguide_width-0.1)
+        #     )
+        # )
+        
+ 
+        # Run simulation
+        sim.run(until=self.n_runs)  # Reduced simulation time for RL iterations
+        
+        # Calculate transmission coefficients
+        mode_data_top_1 = sim.get_eigenmode_coefficients(
+            mode_monitor_right_top, [1],
+            eig_parity=mp.EVEN_Z + mp.ODD_Y
+        )
+
+        mode_data_top_2 = sim.get_eigenmode_coefficients(
+            mode_monitor_right_top, [1],
+            eig_parity=mp.EVEN_Y + mp.ODD_Z
+        )
+        
+        mode_data_bottom_1 = sim.get_eigenmode_coefficients(
+            mode_monitor_right_bottom, [1],
+            eig_parity=mp.EVEN_Z + mp.ODD_Y
+        )
+
+        mode_data_bottom_2 = sim.get_eigenmode_coefficients(
+            mode_monitor_right_bottom, [1],
+            eig_parity=mp.EVEN_Y + mp.ODD_Z
+        )
+
+        # mode_data_input_top = sim.get_eigenmode_coefficients(
+        #     mode_monitor_left_top, [1],
+        #     eig_parity=mp.EVEN_Z + mp.ODD_Y
+        # )
+        
+        # mode_data_input_bottom = sim.get_eigenmode_coefficients(
+        #     mode_monitor_left_bottom, [1],
+        #     eig_parity=mp.EVEN_Z + mp.ODD_Y
+        # )
+        
+        # print('input strength')
+        # print(mode_data_input_top.alpha[0,0,0])
+        # print(mode_data_input_bottom.alpha[0,0,0])
+
+        plt.figure()
+        # sim.plot2D(fields=mp.Ez)
+        field_func = lambda x: np.sqrt(np.abs(x)) # lambda x: 20*np.log10(np.abs(x))
+        sim.plot2D(fields=mp.Ez,
+                field_parameters={'alpha':1, 'cmap':'hsv', 'interpolation':'spline36', 'post_process':field_func})
+        plt.show()
+
+        # self.plot_field_intensity(sim, component=mp.Hz)
+
+        # # Plot field along vertical line
+        # start = mp.Vector3(self.sx/2+self.waveguide_length-self.pml_thickness-self.source_pml_distance, self.sy/2)
+        # end = mp.Vector3(self.sx/2+self.waveguide_length-self.pml_thickness-self.source_pml_distance, -self.sy/2)
+        # self.plot_field_cross_section(sim, start, end, mp.Ex, plot_abs=True)
+
+        # self.visualize_selective_power_flow(sim)
+
+        t_11 = mode_data_top_1.alpha
+        t_11_2 = mode_data_top_2.alpha
+        t_12 = mode_data_bottom_1.alpha
+        t_12_2 = mode_data_bottom_2.alpha
+        
+        sim.reset_meep() # Explicitly reset MEEP to free memory
+        
+        return [t_11, t_11_2, t_12, t_12_2]
+
     def _calculate_tm(self, normalized_scatterers_positions):
         
         # Create geometry with scatterers
@@ -339,6 +462,19 @@ class BilliardTwoEnv(gym.Env):
         t_matrix = []
         for input_port in self.source_ports:
             s_params = self._run_simulation_for_port(input_port, geometry)
+            t_matrix.append(s_params)
+        
+        return np.array(t_matrix)
+    
+    def _calculate_tm_v2(self, normalized_scatterers_positions):  # check back-propogation at output, which estimate the impact of PML
+        
+        # Create geometry with scatterers
+        geometry = self._create_full_geometry(normalized_scatterers_positions)
+        
+        # Calculate transmission matrix
+        t_matrix = []
+        for input_port in self.source_ports:
+            s_params = self._run_simulation_for_port_v2(input_port, geometry)
             t_matrix.append(s_params)
         
         return np.array(t_matrix)
