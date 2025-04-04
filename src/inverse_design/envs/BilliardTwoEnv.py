@@ -35,7 +35,7 @@ class BilliardTwoEnv(gym.Env):
         
         # MEEP simulation parameters
         self.resolution = 20  # pixels/cm
-        self.n_runs = 150     # number of runs during simulation
+        self.n_runs = 100     # number of runs during simulation
         '''
         a = 0.01  chosen characteristic length = 1cm
         c = 3e8   speed of light
@@ -44,21 +44,26 @@ class BilliardTwoEnv(gym.Env):
         '''
         self.fsrc = 15.0 / 30
 
-        self.sx = 15
-        self.sy = 15
+        self.sx = 20
+        self.sy = 20
         self.scatterer_radius = 0.5
 
         self.sx_scatterer = self.sx - 2 * self.scatterer_radius # range of scatterer center 
         self.sy_scatterer = self.sy - 2 * self.scatterer_radius
 
         self.waveguide_width = 1.2
-        self.waveguide_length = 25.0
-        self.waveguide_offset = 3.0  # waveguide center distance to billiard horizontal midline
+        
+        self.waveguide_offset = 6.0  # waveguide center distance to billiard horizontal midline
 
-        self.pml_thickness = 8.0
         self.metal_thickness = 0.2
+        
+        self.pml_thickness = 4.0 #8.0 # 3
+        
+        # distance between source/montor and PML 
+        self.source_pml_distance = 6.0  #1 #
+        self.source_billiard_distance = 19.0  #1 #
 
-        self.source_pml_distance = 6.0 # distance between source/montor and PML 
+        self.waveguide_length = self.source_pml_distance + self.source_billiard_distance + self.pml_thickness
 
         self.epsilon_bg = 1.0
         self.epsilon_scatter = 3.9
@@ -307,12 +312,12 @@ class BilliardTwoEnv(gym.Env):
             # print(mode_data_input_top.alpha[0,0,0])
             # print(mode_data_input_bottom.alpha[0,0,0])
 
-            plt.figure()
-            # sim.plot2D(fields=mp.Ex)
-            field_func = lambda x: np.sqrt(np.abs(x)) # lambda x: 20*np.log10(np.abs(x))
-            sim.plot2D(fields=mp.Ex,
-                    field_parameters={'alpha':1, 'cmap':'hsv', 'interpolation':'spline36', 'post_process':field_func})
-            plt.show()
+            # plt.figure()
+            # field_func = lambda x: np.sqrt(np.abs(x)) # lambda x: 20*np.log10(np.abs(x))
+            # sim.plot2D(fields=mp.Ex,
+            #         field_parameters={'alpha':1, 'cmap':'hsv', 'interpolation':'spline36', 'post_process':field_func, 'colorbar':False})
+            # plt.xlim(-self.sx/2 - 5, self.sx/2 + 5)
+            # plt.show()
 
             # self.plot_field_intensity(sim, component=mp.Hz)
 
@@ -429,7 +434,6 @@ class BilliardTwoEnv(gym.Env):
         # print(mode_data_input_bottom.alpha[0,0,0])
 
         plt.figure()
-        # sim.plot2D(fields=mp.Ez)
         field_func = lambda x: np.sqrt(np.abs(x)) # lambda x: 20*np.log10(np.abs(x))
         sim.plot2D(fields=mp.Ez,
                 field_parameters={'alpha':1, 'cmap':'hsv', 'interpolation':'spline36', 'post_process':field_func})
@@ -481,14 +485,17 @@ class BilliardTwoEnv(gym.Env):
     
     def _calculate_reward(self, tm) -> tuple[np.float32, np.float32]:
         # Target relationship: tm[0] * 1.73 = tm[1], expect a rank-1 TM
-        ratio = 1.41
+        ratio = np.sqrt(2)
         # error = np.sum((np.abs(tm[0] / tm[1]) * ratio - 1)**2) 
+
+        # const power splitter
+        error = np.abs(tm[0][0] * ratio - tm[0][1]) + np.abs(tm[1][0] * ratio - tm[1][1])
 
         # error = np.mean(np.abs(tm[0] * ratio - tm[1]))
         # error = np.abs(tm[0][0] * tm[1][1] - tm[0][1] * tm[1][0])
 
-        targetTM = np.array([[-2.28661274+0.54642883j, -7.33391126-0.31989986j], [4.91357518-2.36528964j,  3.44673878+3.01154595j]])
-        error = np.sum(np.abs(tm - targetTM))
+        # targetTM = np.array([[-2.28661274+0.54642883j, -7.33391126-0.31989986j], [4.91357518-2.36528964j,  3.44673878+3.01154595j]])
+        # error = np.sum(np.abs(tm - targetTM))
         
         # Reward is negative of error (higher reward for lower error)
         reward = -error
@@ -709,7 +716,7 @@ class BilliardTwoEnv(gym.Env):
         power_magnitude = np.sqrt(np.sqrt(np.abs(sx)**2 + np.abs(sy)**2))
         
         # Plot power flow magnitude
-        plt.figure(figsize=(12, 8))
+        plt.figure()
         plt.imshow(power_magnitude.transpose(), origin='lower', cmap='viridis')
         plt.colorbar(label='Power flow magnitude')
         plt.title('Power Flow Distribution')
@@ -746,14 +753,14 @@ class BilliardTwoEnv(gym.Env):
         sy_plot = sy_plot / (norm + 1e-10)
         
         # Plot selective quiver
-        # plt.quiver(X_plot, Y_plot, sx_plot, sy_plot, 
-        #         scale=15,      
-        #         pivot='mid',    
-        #         color='white', 
-        #         alpha=0.9,
-        #         width=0.006,
-        #         headwidth=5,
-        #         headlength=6)
+        plt.quiver(X_plot, Y_plot, sx_plot, sy_plot, 
+                scale=15,      
+                pivot='mid',    
+                color='white', 
+                alpha=0.9,
+                width=0.006,
+                headwidth=5,
+                headlength=6)
         
         plt.xlabel('x (pixels)')
         plt.ylabel('y (pixels)')
