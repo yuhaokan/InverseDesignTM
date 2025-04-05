@@ -34,7 +34,7 @@ class BilliardTwoEnv(gym.Env):
         self.observation_space = spaces.Box(low=-1, high=1, shape=(2 * self.n_scatterers,), dtype=np.float32) 
         
         # MEEP simulation parameters
-        self.resolution = 20  # pixels/cm
+        self.resolution = 15  # pixels/cm
         self.n_runs = 100     # number of runs during simulation
         '''
         a = 0.01  chosen characteristic length = 1cm
@@ -57,11 +57,11 @@ class BilliardTwoEnv(gym.Env):
 
         self.metal_thickness = 0.2
         
-        self.pml_thickness = 4.0 #8.0 # 3
+        self.pml_thickness = 3.0 #8.0 # 3
         
         # distance between source/montor and PML 
-        self.source_pml_distance = 6.0  #1 #
-        self.source_billiard_distance = 19.0  #1 #
+        self.source_pml_distance = 3.0  #1 #
+        self.source_billiard_distance = 6.0  #1 #
 
         self.waveguide_length = self.source_pml_distance + self.source_billiard_distance + self.pml_thickness
 
@@ -489,7 +489,10 @@ class BilliardTwoEnv(gym.Env):
         # error = np.sum((np.abs(tm[0] / tm[1]) * ratio - 1)**2) 
 
         # const power splitter
-        error = np.abs(tm[0][0] * ratio - tm[0][1]) + np.abs(tm[1][0] * ratio - tm[1][1])
+        # error = np.abs(tm[0][0] * ratio - tm[0][1]) + np.abs(tm[1][0] * ratio - tm[1][1])
+
+        # rank-1 & trace-0
+        error = np.abs(tm[0][0] * tm[1][1] - tm[0][1] * tm[1][0]) + np.abs(tm[0][0] + tm[1][1])
 
         # error = np.mean(np.abs(tm[0] * ratio - tm[1]))
         # error = np.abs(tm[0][0] * tm[1][1] - tm[0][1] * tm[1][0])
