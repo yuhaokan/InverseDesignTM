@@ -60,7 +60,7 @@ class BilliardThreeEnv(gym.Env):
         self.waveguide_length = self.source_pml_distance + self.source_billiard_distance + self.pml_thickness
 
         self.epsilon_bg = 1.0
-        self.epsilon_scatter = 3.9
+        self.epsilon_scatter = 2.1
         
         self.mode_num = 1
         
@@ -87,6 +87,72 @@ class BilliardThreeEnv(gym.Env):
         self.best_positions = None
         self.step_count = 0
 
+    # at the beginning of each episode, reset env
+    def reset(self, seed=None, options=None) -> tuple[spaces.Box, dict[str, typing.Any]]:
+        """
+        Reset the environment.
+
+        Args:
+            seed (int, optional): Random seed for reproducibility
+            options: None
+
+        Returns:
+            tuple: (observation, info_dict)
+        """
+        # Important: Call super().reset() first to properly seed the environment
+        super().reset(seed=seed)
+
+        # Optionally reset to best known positions with small perturbation
+        if self.best_positions is not None and self.np_random.random() < 0.7:
+            # 70% chance to use best positions with small Gaussian noise
+            noise = self.np_random.normal(0, 0.05, size=(2*self.n_scatterers,)).astype(np.float32)
+            self.scatter_pos = np.clip(self.best_positions + noise, -1, 1)
+        else:
+            # 30% chance to generate new random positions
+            self.scatter_pos = self._generate_initial_positions(seed)
+
+
+        self.step_count = 0
+
+        # Return both observation and info dict
+        return self.scatter_pos, {}
+    
+
+    def step(self, action) -> tuple[spaces.Box, np.float32, bool, bool, dict[str, typing.Any]]:
+        self.step_count += 1
+
+        # Apply action (small adjustments to positions)
+        scaling_factor = 0.001  # Control adjustment size
+        self.scatter_pos = np.clip(self.scatter_pos + action * scaling_factor, -1, 1)
+        
+        # Calculate transmission matrix with new positions
+        tm = self._calculate_tm(self.scatter_pos)
+        
+        # Calculate reward and error
+        reward, error = self._calculate_reward(tm)
+        
+        # Update best positions if current error is lower than best error
+        if error < self.best_error:
+            self.best_error = error
+            self.best_positions = self.scatter_pos.copy()  # Make a copy to prevent reference issues
+
+        # Check if goal is achieved or max steps reached
+        terminated = error < 0.01         #  5% deviation for 1.73*t11 vs t21, 5% deviation for 1.73*t12 vs t22, error_threshold = 2 * (5%)^2 = 0.005
+        
+        truncated = self.step_count >= self.max_step
+
+        info = {
+            "error": error,
+            "scatter_pos": self.scatter_pos.copy(),
+            "step": self.step_count
+        }
+        
+        # Print progress every 10 steps
+        # if self.step_count % 10 == 0:
+        #     print(f"Step {self.step_count}, Error: {error:.6f}, Reward: {reward:.6f}")
+
+        return self.scatter_pos, reward, terminated, truncated, info
+    
     def _generate_initial_positions(self, seed=None):
         # Generate and normalize random positions
         # Use self.np_random instead of np.random to ensure proper seeding
@@ -323,12 +389,12 @@ class BilliardThreeEnv(gym.Env):
                 eig_parity=mp.EVEN_Z + mp.ODD_Y
             )
 
-            plt.figure()
-            field_func = lambda x: np.sqrt(np.abs(x)) # lambda x: 20*np.log10(np.abs(x))
-            sim.plot2D(fields=mp.Ex,
-                    field_parameters={'alpha':1, 'cmap':'hsv', 'interpolation':'spline36', 'post_process':field_func, 'colorbar':False})
-            # plt.xlim(-self.sx/2 - 5, self.sx/2 + 5)
-            plt.show()
+            # plt.figure()
+            # field_func = lambda x: np.sqrt(np.abs(x)) # lambda x: 20*np.log10(np.abs(x))
+            # sim.plot2D(fields=mp.Ex,
+            #         field_parameters={'alpha':1, 'cmap':'hsv', 'interpolation':'spline36', 'post_process':field_func, 'colorbar':False})
+            # # plt.xlim(-self.sx/2 - 5, self.sx/2 + 5)
+            # plt.show()
 
             t_11 = mode_data_top.alpha[0,0,0]
             t_12 = mode_data_center.alpha[0,0,0]
@@ -414,9 +480,9 @@ if __name__ == "__main__":
     env = BilliardThreeEnv()
     # # env = gym.make('MyEnv-v0')
     env.reset(seed=55)
-    # print("check env begin")
-    # check_env(env)
-    # print("check env end")
+    print("check env begin")
+    check_env(env)
+    print("check env end")
 
     # print(env._calculate_tm(env.scatter_pos))
 
