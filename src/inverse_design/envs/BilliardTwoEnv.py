@@ -9,6 +9,9 @@ from matplotlib.patches import Rectangle, Circle
 import typing
 from stable_baselines3.common.vec_env import DummyVecEnv
 
+import BilliardBaseEnv
+
+
 # Suppress logging
 mp.verbosity(0)
 
@@ -18,7 +21,7 @@ mp.verbosity(0)
 # )
 
 
-class BilliardTwoEnv(gym.Env):
+class BilliardTwoEnv(BilliardBaseEnv):
     def __init__(self):
         super().__init__()
 
@@ -66,7 +69,7 @@ class BilliardTwoEnv(gym.Env):
         self.waveguide_length = self.source_pml_distance + self.source_billiard_distance + self.pml_thickness
 
         self.epsilon_bg = 1.0
-        self.epsilon_scatter = 3.9
+        self.epsilon_scatter = 2.1 # 3.9
         
         self.mode_num = 1
         
@@ -90,7 +93,6 @@ class BilliardTwoEnv(gym.Env):
         self.best_error = float('inf')
         self.best_positions = None
         self.step_count = 0
-
 
     def _generate_initial_positions(self, seed=None):
         # Generate and normalize random positions
@@ -265,7 +267,7 @@ class BilliardTwoEnv(gym.Env):
         # mode_monitor_left_top = sim.add_mode_monitor(
         #     self.fsrc, 0, 1,
         #     mp.ModeRegion(
-        #         center=mp.Vector3(-self.sx/2-self.waveguide_length+self.pml_thickness+3, self.waveguide_offset),
+        #         center=mp.Vector3(-self.sx/2-self.waveguide_length+self.pml_thickness+self.source_pml_distance+3, self.waveguide_offset),
         #         size=mp.Vector3(0, self.waveguide_width-0.1)
         #     )
         # )
@@ -273,7 +275,7 @@ class BilliardTwoEnv(gym.Env):
         # mode_monitor_left_bottom = sim.add_mode_monitor(
         #     self.fsrc, 0, 1,
         #     mp.ModeRegion(
-        #         center=mp.Vector3(-self.sx/2-self.waveguide_length+self.pml_thickness+3, -self.waveguide_offset),
+        #         center=mp.Vector3(-self.sx/2-self.waveguide_length+self.pml_thickness+self.source_pml_distance+3, -self.waveguide_offset),
         #         size=mp.Vector3(0, self.waveguide_width-0.1)
         #     )
         # )
@@ -312,12 +314,15 @@ class BilliardTwoEnv(gym.Env):
             # print(mode_data_input_top.alpha[0,0,0])
             # print(mode_data_input_bottom.alpha[0,0,0])
 
-            # plt.figure()
-            # field_func = lambda x: np.sqrt(np.abs(x)) # lambda x: 20*np.log10(np.abs(x))
-            # sim.plot2D(fields=mp.Ex,
-            #         field_parameters={'alpha':1, 'cmap':'hsv', 'interpolation':'spline36', 'post_process':field_func, 'colorbar':False})
+            plt.figure()
+            field_func = lambda x: np.sqrt(np.abs(x)) # lambda x: 20*np.log10(np.abs(x))
+            sim.plot2D(fields=mp.Ey,
+                    field_parameters={'alpha':1, 'cmap':'hsv', 'interpolation':'spline36', 'post_process':field_func, 'colorbar':False},
+                    boundary_parameters={'hatch':'o', 'linewidth':1.5, 'facecolor':'y', 'edgecolor':'b', 'alpha':0.3},
+                    eps_parameters={'alpha':1, 'contour':False}
+                )
             # plt.xlim(-self.sx/2 - 5, self.sx/2 + 5)
-            # plt.show()
+            plt.show()
 
             # self.plot_field_intensity(sim, component=mp.Hz)
 
@@ -335,127 +340,6 @@ class BilliardTwoEnv(gym.Env):
             
             return [t_11, t_12]
     
-    def _run_simulation_for_port_v2(self, input_port, geometry):
-        # Create a new simulation for this port
-        cell_size = mp.Vector3(self.sx + 2*self.waveguide_length, self.sy + 2*self.metal_thickness)
-        pml_layers = [mp.PML(self.pml_thickness, direction=mp.X)]
-        
-        sources = [mp.EigenModeSource(
-            mp.ContinuousSource(frequency=self.fsrc),
-            center=input_port["position"],
-            size=mp.Vector3(0, self.waveguide_width-0.1),
-            eig_band=self.mode_num,
-            # eig_parity=mp.ODD_Z + mp.EVEN_Y
-            eig_parity=mp.EVEN_Z + mp.ODD_Y  # Theoretically, EVEN_Z means Ez != 0, however, here, Ez=0
-            # eig_parity=mp.EVEN_Z
-            # eig_parity=mp.ODD_Z
-        )]
-        
-        sim = mp.Simulation(
-            cell_size=cell_size,
-            boundary_layers=pml_layers,
-            geometry=geometry,
-            sources=sources,
-            resolution=self.resolution,
-            dimensions=2
-        )
-        
-        # Add monitors
-        mode_monitor_right_top = sim.add_mode_monitor(
-            self.fsrc, 0, 1,
-            mp.ModeRegion(
-                center=self.output_ports[0]["position"],
-                size=mp.Vector3(0, self.waveguide_width-0.1)
-            )
-        )
-
-        mode_monitor_right_bottom = sim.add_mode_monitor(
-            self.fsrc, 0, 1,
-            mp.ModeRegion(
-                center=self.output_ports[1]["position"],
-                size=mp.Vector3(0, self.waveguide_width-0.1)
-            )
-        )
-
-        # # monitor input
-        # mode_monitor_left_top = sim.add_mode_monitor(
-        #     self.fsrc, 0, 1,
-        #     mp.ModeRegion(
-        #         center=mp.Vector3(-self.sx/2-self.waveguide_length+self.pml_thickness+3, self.waveguide_offset),
-        #         size=mp.Vector3(0, self.waveguide_width-0.1)
-        #     )
-        # )
-
-        # mode_monitor_left_bottom = sim.add_mode_monitor(
-        #     self.fsrc, 0, 1,
-        #     mp.ModeRegion(
-        #         center=mp.Vector3(-self.sx/2-self.waveguide_length+self.pml_thickness+3, -self.waveguide_offset),
-        #         size=mp.Vector3(0, self.waveguide_width-0.1)
-        #     )
-        # )
-        
- 
-        # Run simulation
-        sim.run(until=self.n_runs)  # Reduced simulation time for RL iterations
-        
-        # Calculate transmission coefficients
-        mode_data_top_1 = sim.get_eigenmode_coefficients(
-            mode_monitor_right_top, [1],
-            eig_parity=mp.EVEN_Z + mp.ODD_Y
-        )
-
-        mode_data_top_2 = sim.get_eigenmode_coefficients(
-            mode_monitor_right_top, [1],
-            eig_parity=mp.EVEN_Y + mp.ODD_Z
-        )
-        
-        mode_data_bottom_1 = sim.get_eigenmode_coefficients(
-            mode_monitor_right_bottom, [1],
-            eig_parity=mp.EVEN_Z + mp.ODD_Y
-        )
-
-        mode_data_bottom_2 = sim.get_eigenmode_coefficients(
-            mode_monitor_right_bottom, [1],
-            eig_parity=mp.EVEN_Y + mp.ODD_Z
-        )
-
-        # mode_data_input_top = sim.get_eigenmode_coefficients(
-        #     mode_monitor_left_top, [1],
-        #     eig_parity=mp.EVEN_Z + mp.ODD_Y
-        # )
-        
-        # mode_data_input_bottom = sim.get_eigenmode_coefficients(
-        #     mode_monitor_left_bottom, [1],
-        #     eig_parity=mp.EVEN_Z + mp.ODD_Y
-        # )
-        
-        # print('input strength')
-        # print(mode_data_input_top.alpha[0,0,0])
-        # print(mode_data_input_bottom.alpha[0,0,0])
-
-        plt.figure()
-        field_func = lambda x: np.sqrt(np.abs(x)) # lambda x: 20*np.log10(np.abs(x))
-        sim.plot2D(fields=mp.Ez,
-                field_parameters={'alpha':1, 'cmap':'hsv', 'interpolation':'spline36', 'post_process':field_func})
-        plt.show()
-
-        # self.plot_field_intensity(sim, component=mp.Hz)
-
-        # # Plot field along vertical line
-        # start = mp.Vector3(self.sx/2+self.waveguide_length-self.pml_thickness-self.source_pml_distance, self.sy/2)
-        # end = mp.Vector3(self.sx/2+self.waveguide_length-self.pml_thickness-self.source_pml_distance, -self.sy/2)
-        # self.plot_field_cross_section(sim, start, end, mp.Ex, plot_abs=True)
-
-        # self.visualize_selective_power_flow(sim)
-
-        t_11 = mode_data_top_1.alpha
-        t_11_2 = mode_data_top_2.alpha
-        t_12 = mode_data_bottom_1.alpha
-        t_12_2 = mode_data_bottom_2.alpha
-        
-        sim.reset_meep() # Explicitly reset MEEP to free memory
-        
-        return [t_11, t_11_2, t_12, t_12_2]
 
     def _calculate_tm(self, normalized_scatterers_positions):
         
@@ -470,19 +354,6 @@ class BilliardTwoEnv(gym.Env):
         
         return np.array(t_matrix)
     
-    def _calculate_tm_v2(self, normalized_scatterers_positions):  # check back-propogation at output, which estimate the impact of PML
-        
-        # Create geometry with scatterers
-        geometry = self._create_full_geometry(normalized_scatterers_positions)
-        
-        # Calculate transmission matrix
-        t_matrix = []
-        for input_port in self.source_ports:
-            s_params = self._run_simulation_for_port_v2(input_port, geometry)
-            t_matrix.append(s_params)
-        
-        return np.array(t_matrix)
-    
     def _calculate_reward(self, tm) -> tuple[np.float32, np.float32]:
         # Target relationship: tm[0] * 1.73 = tm[1], expect a rank-1 TM
         ratio = np.sqrt(2)
@@ -492,10 +363,10 @@ class BilliardTwoEnv(gym.Env):
         # error = np.abs(tm[0][0] * ratio - tm[0][1]) + np.abs(tm[1][0] * ratio - tm[1][1])
 
         # rank-1 & trace-0
-        error = np.abs(tm[0][0] * tm[1][1] - tm[0][1] * tm[1][0]) + np.abs(tm[0][0] + tm[1][1])
+        # error = np.abs(tm[0][0] * tm[1][1] - tm[0][1] * tm[1][0]) + np.abs(tm[0][0] + tm[1][1])
 
         # error = np.mean(np.abs(tm[0] * ratio - tm[1]))
-        # error = np.abs(tm[0][0] * tm[1][1] - tm[0][1] * tm[1][0])
+        error = np.abs(tm[0][0] * tm[1][1] - tm[0][1] * tm[1][0])
 
         # targetTM = np.array([[-2.28661274+0.54642883j, -7.33391126-0.31989986j], [4.91357518-2.36528964j,  3.44673878+3.01154595j]])
         # error = np.sum(np.abs(tm - targetTM))
@@ -625,148 +496,6 @@ class BilliardTwoEnv(gym.Env):
         ax.set_title(f'Current Scatterer Configuration (Step {self.step_count})')
         
         plt.tight_layout()
-        plt.show()
-
-    def plot_field_intensity(self, sim, component=mp.Ez):
-        output_plane=mp.Volume(center=mp.Vector3(), 
-                               size=mp.Vector3(self.sx + 2*self.waveguide_length, self.sy + 2*self.metal_thickness))
-        
-        # Get the field data
-        field_data = sim.get_array(center=output_plane.center, size=output_plane.size, component=component)
-        print(np.shape(field_data))
-        # Calculate intensity (|E|²)
-        intensity = np.abs(field_data)**2
-    
-        # Plot the intensity
-        plt.figure()
-        # plt.imshow(intensity.transpose(), interpolation='spline36', cmap='magma') 
-        plt.imshow(intensity.transpose())
-        plt.colorbar(label='Intensity')
-        plt.title(f'{component} Intensity')
-        # plt.xlabel('x')
-        # plt.ylabel('y')
-        # plt.tight_layout()
-        # plt.savefig(f"{component}_intensity.png")
-        plt.show()
-
-    def plot_field_cross_section(self, sim, start_point, end_point, component=mp.Ex,
-                             num_points=100, plot_abs=True):
-        """
-        Plot field values along a line between two points.
-
-        Args:
-            sim: The MEEP simulation
-            start_point: Vector3 starting coordinate
-            end_point: Vector3 ending coordinate
-            component: Field component to plot
-            num_points: Number of points to sample along the line
-            plot_abs: Whether to plot absolute value or real part
-        """
-        # Create interpolation points along the line
-        points = []
-        for i in range(num_points):
-            t = i / (num_points - 1)
-            x = start_point.x + t * (end_point.x - start_point.x)
-            y = start_point.y + t * (end_point.y - start_point.y)
-            z = start_point.z + t * (end_point.z - start_point.z)
-            points.append(mp.Vector3(x, y, z))
-
-        # Get field values at each point
-        field_values = [sim.get_field_point(component, p) for p in points]
-
-        # Calculate distances along the path for x-axis
-        distances = [0]
-        for i in range(1, len(points)):
-            p1 = points[i - 1]
-            p2 = points[i]
-            dist = np.sqrt((p2.x - p1.x) ** 2 + (p2.y - p1.y) ** 2 + (p2.z - p1.z) ** 2)
-            distances.append(distances[-1] + dist)
-
-        # Plot the field values
-        plt.figure(figsize=(10, 6))
-        if plot_abs:
-            plt.plot(distances, [abs(f) for f in field_values], 'b-', linewidth=2)
-            plt.plot(distances, [abs(f) ** 2 for f in field_values], 'r--', linewidth=2)
-            plt.legend(['|Field|', '|Field|²'])
-            plt.ylabel(f'|{component}| Amplitude')
-        else:
-            plt.plot(distances, [f.real for f in field_values], 'b-', linewidth=2)
-            plt.plot(distances, [f.imag for f in field_values], 'r--', linewidth=2)
-            plt.legend(['Re(Field)', 'Im(Field)'])
-            plt.ylabel(f'{component} Field Value')
-
-        plt.xlabel('Distance along path')
-        plt.title(f'{component} Field Along Cross-Section')
-        plt.grid(True)
-        plt.tight_layout()
-        plt.show()
-
-
-    def visualize_selective_power_flow(self, sim):
-        """
-        Visualize power flow with arrows only in areas of significant power flow
-        """
-        # Get field components
-        ex = sim.get_array(component=mp.Ex)
-        ey = sim.get_array(component=mp.Ey)
-        hz = sim.get_array(component=mp.Hz)
-        
-        # For 2D TE mode (Ex, Ey, Hz), Poynting vector components are:
-        sx = ey * np.conj(hz)  # x-component
-        sy = -ex * np.conj(hz) # y-component
-        
-        # Magnitude of power flow
-        power_magnitude = np.sqrt(np.sqrt(np.abs(sx)**2 + np.abs(sy)**2))
-        
-        # Plot power flow magnitude
-        plt.figure()
-        plt.imshow(power_magnitude.transpose(), origin='lower', cmap='viridis')
-        plt.colorbar(label='Power flow magnitude')
-        plt.title('Power Flow Distribution')
-        
-        # Add power flow direction vectors ONLY IN SIGNIFICANT AREAS
-        step = 12  # Spacing between arrows
-        
-        # Create grid
-        x = np.arange(0, ex.shape[0], step)
-        y = np.arange(0, ex.shape[1], step)
-        X, Y = np.meshgrid(x, y)
-        
-        # Get downsampled data
-        sx_ds = sx[::step, ::step]
-        sy_ds = sy[::step, ::step]
-        power_ds = power_magnitude[::step, ::step]
-        
-        # Threshold for significant power flow (adjust as needed)
-        # Find the value at 30% of the max power
-        threshold = 0.3 * np.max(power_magnitude)
-        
-        # Create masks for points to plot
-        mask = power_ds > threshold
-        
-        # Only plot points above threshold
-        X_plot = X[mask.T]
-        Y_plot = Y[mask.T]
-        
-        # Normalize direction vectors 
-        sx_plot = np.real(sx_ds[mask])
-        sy_plot = np.real(sy_ds[mask])
-        norm = np.sqrt(sx_plot**2 + sy_plot**2)
-        sx_plot = sx_plot / (norm + 1e-10)
-        sy_plot = sy_plot / (norm + 1e-10)
-        
-        # Plot selective quiver
-        plt.quiver(X_plot, Y_plot, sx_plot, sy_plot, 
-                scale=15,      
-                pivot='mid',    
-                color='white', 
-                alpha=0.9,
-                width=0.006,
-                headwidth=5,
-                headlength=6)
-        
-        plt.xlabel('x (pixels)')
-        plt.ylabel('y (pixels)')
         plt.show()
         
 
