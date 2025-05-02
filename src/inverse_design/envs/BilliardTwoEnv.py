@@ -9,7 +9,7 @@ from matplotlib.patches import Rectangle, Circle
 import typing
 from stable_baselines3.common.vec_env import DummyVecEnv
 
-import BilliardBaseEnv
+from base_env import BilliardBaseEnv
 
 
 # Suppress logging
