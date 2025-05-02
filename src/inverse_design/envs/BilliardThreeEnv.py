@@ -9,10 +9,12 @@ from matplotlib.patches import Rectangle, Circle
 import typing
 from stable_baselines3.common.vec_env import DummyVecEnv
 
+from base_env import BilliardBaseEnv
+
 # Suppress logging
 mp.verbosity(0)
 
-class BilliardThreeEnv(gym.Env):
+class BilliardThreeEnv(BilliardBaseEnv):
     def __init__(self):
         super().__init__()
 
@@ -86,37 +88,6 @@ class BilliardThreeEnv(gym.Env):
         self.best_error = float('inf')
         self.best_positions = None
         self.step_count = 0
-
-    # at the beginning of each episode, reset env
-    def reset(self, seed=None, options=None) -> tuple[spaces.Box, dict[str, typing.Any]]:
-        """
-        Reset the environment.
-
-        Args:
-            seed (int, optional): Random seed for reproducibility
-            options: None
-
-        Returns:
-            tuple: (observation, info_dict)
-        """
-        # Important: Call super().reset() first to properly seed the environment
-        super().reset(seed=seed)
-
-        # Optionally reset to best known positions with small perturbation
-        if self.best_positions is not None and self.np_random.random() < 0.7:
-            # 70% chance to use best positions with small Gaussian noise
-            noise = self.np_random.normal(0, 0.05, size=(2*self.n_scatterers,)).astype(np.float32)
-            self.scatter_pos = np.clip(self.best_positions + noise, -1, 1)
-        else:
-            # 30% chance to generate new random positions
-            self.scatter_pos = self._generate_initial_positions(seed)
-
-
-        self.step_count = 0
-
-        # Return both observation and info dict
-        return self.scatter_pos, {}
-    
 
     def step(self, action) -> tuple[spaces.Box, np.float32, bool, bool, dict[str, typing.Any]]:
         self.step_count += 1

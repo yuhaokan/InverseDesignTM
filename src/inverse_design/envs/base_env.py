@@ -2,10 +2,55 @@ import gymnasium as gym
 import matplotlib.pyplot as plt
 import numpy as np
 import meep as mp
+import typing
+
+from gymnasium import spaces
 
 class BilliardBaseEnv(gym.Env):
     def __init__(self):
         super().__init__()
+
+    # at the beginning of each episode, reset env
+    def reset(self, seed=None, options=None) -> tuple[spaces.Box, dict[str, typing.Any]]:
+        """
+        Reset the environment.
+
+        Args:
+            seed (int, optional): Random seed for reproducibility
+            options: None
+
+        Returns:
+            tuple: (observation, info_dict)
+        """
+        # Important: Call super().reset() first to properly seed the environment
+        super().reset(seed=seed)
+
+        # Optionally reset to best known positions with small perturbation
+        if self.best_positions is not None and self.np_random.random() < 0.7:
+            # 70% chance to use best positions with small Gaussian noise
+            noise = self.np_random.normal(0, 0.05, size=(2*self.n_scatterers,)).astype(np.float32)
+            self.scatter_pos = np.clip(self.best_positions + noise, -1, 1)
+        else:
+            # 30% chance to generate new random positions
+            self.scatter_pos = self._generate_initial_positions(seed)
+
+
+        self.step_count = 0
+
+        # Return both observation and info dict
+        return self.scatter_pos, {}
+    
+    def get_state(self) -> dict[str, typing.Any]:
+        """Get the current state of the environment."""
+        return {
+            'scatter_pos': self.scatter_pos.copy(),
+            'step_count': self.step_count,
+        }
+
+    def set_state(self, state: dict[str, typing.Any]) -> None:
+        """Set the current state of the environment."""
+        self.scatter_pos = state['scatter_pos'].copy()
+        self.step_count = state['step_count']
 
     def plot_field_intensity(self, sim, component=mp.Ez):
         output_plane=mp.Volume(center=mp.Vector3(), 
@@ -147,3 +192,4 @@ class BilliardBaseEnv(gym.Env):
         plt.xlabel('x (pixels)')
         plt.ylabel('y (pixels)')
         plt.show()
+        
