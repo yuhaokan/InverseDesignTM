@@ -17,7 +17,7 @@ class BilliardBaseEnv(gym.Env):
 
         # MEEP simulation parameters
         self.resolution = 15  # pixels/cm
-        self.n_runs = 100     # number of runs during simulation
+        self.n_runs = 200     # number of runs during simulation
 
 
         '''
