@@ -13,18 +13,16 @@ class BilliardThreeEnv(BilliardBaseEnv):
 
         # Define ports - now with 3 input and 3 output ports (added center ports)
         self.source_ports = [
-            {"name": "left_top", "position": mp.Vector3(-self.sx/2-self.waveguide_length+self.pml_thickness+self.source_pml_distance, self.waveguide_offset), "direction": mp.X},
-            {"name": "left_center", "position": mp.Vector3(-self.sx/2-self.waveguide_length+self.pml_thickness+self.source_pml_distance, 0), "direction": mp.X},
-            {"name": "left_bottom", "position": mp.Vector3(-self.sx/2-self.waveguide_length+self.pml_thickness+self.source_pml_distance, -self.waveguide_offset), "direction": mp.X}
+            {"name": "left_top", "position": mp.Vector3(-self.sx/2-self.source_billiard_distance, self.waveguide_offset), "direction": mp.X},
+            {"name": "left_center", "position": mp.Vector3(-self.sx/2-self.source_billiard_distance, 0), "direction": mp.X},
+            {"name": "left_bottom", "position": mp.Vector3(-self.sx/2-self.source_billiard_distance, -self.waveguide_offset), "direction": mp.X}
         ]
 
         self.output_ports = [
-            {"name": "right_top", "position": mp.Vector3(self.sx/2+self.waveguide_length-self.pml_thickness-self.source_pml_distance, self.waveguide_offset), "direction": mp.X},
-            {"name": "right_center", "position": mp.Vector3(self.sx/2+self.waveguide_length-self.pml_thickness-self.source_pml_distance, 0), "direction": mp.X},
-            {"name": "right_bottom", "position": mp.Vector3(self.sx/2+self.waveguide_length-self.pml_thickness-self.source_pml_distance, -self.waveguide_offset), "direction": mp.X}
+            {"name": "right_top", "position": mp.Vector3(self.sx/2+self.source_billiard_distance, self.waveguide_offset), "direction": mp.X},
+            {"name": "right_center", "position": mp.Vector3(self.sx/2+self.source_billiard_distance, 0), "direction": mp.X},
+            {"name": "right_bottom", "position": mp.Vector3(self.sx/2+self.source_billiard_distance, -self.waveguide_offset), "direction": mp.X}
         ]
-
-        self.scatter_pos = self._generate_initial_positions()
     
     def _create_base_geometry(self):
         # Create the base geometry (billiard and waveguides)
@@ -160,7 +158,6 @@ if __name__ == "__main__":
     # check_env(env)
     # print("check env end")
 
-    tm_sample = env._calculate_tm(env.scatter_pos)
+    tm_sample = env._calculate_subSM(env.scatter_pos, matrix_type="TM")
     print(tm_sample)
-
     print(env._calculate_reward(tm_sample))

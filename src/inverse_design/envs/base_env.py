@@ -64,9 +64,15 @@ class BilliardBaseEnv(gym.Env):
         # Child classes should define these
         self.source_ports = []
         self.output_ports = []
+        self.reflection_ports = []
         
-        # Initialize scatterer positions
-        self.scatter_pos = None
+        # Meep use the 'last object wins' principle, ie, if multiple objects overlap, later objects in the list take precedence. 
+        # Allow overlapping simplifies implementation and help explore more diverse configurations.
+        # Initial scatterer positions, this is normalized position !!!
+        self.scatter_pos = self._generate_initial_positions()
+
+        # self.eig_parity = mp.EVEN_Y
+        self.eig_parity = mp.EVEN_Z + mp.ODD_Y
 
     def _generate_initial_positions(self, seed=None):
         # Generate and normalize random positions
@@ -118,20 +124,20 @@ class BilliardBaseEnv(gym.Env):
             
         return geometry
     
-    def _calculate_tm(self, normalized_scatterers_positions):
+    def _calculate_subSM(self, normalized_scatterers_positions, matrix_type="TM", visualize=False):
         
         # Create geometry with scatterers
         geometry = self._create_full_geometry(normalized_scatterers_positions)
         
         # Calculate transmission matrix
-        t_matrix = []
+        sub_matrix = []
         for input_port in self.source_ports:
-            s_params = self._run_simulation_for_port(input_port, geometry)
-            t_matrix.append(s_params)
+            s_params = self._run_simulation_for_port(input_port, geometry, matrix_type, visualize)
+            sub_matrix.append(s_params)
         
-        return np.array(t_matrix)
+        return np.array(sub_matrix)
     
-    def _run_simulation_for_port(self, input_port, geometry, run=True):
+    def _run_simulation_for_port(self, input_port, geometry, matrix_type="TM", visualize=False):
         """Run simulation for a specific input port"""
         # Create a new simulation for this port
         cell_size = mp.Vector3(self.sx + 2*self.waveguide_length, self.sy + 2*self.metal_thickness)
@@ -142,7 +148,7 @@ class BilliardBaseEnv(gym.Env):
             center=input_port["position"],
             size=mp.Vector3(0, self.waveguide_width-0.1),
             eig_band=self.mode_num,
-            eig_parity=mp.EVEN_Z + mp.ODD_Y
+            eig_parity=self.eig_parity
         )]
         
         sim = mp.Simulation(
@@ -154,48 +160,82 @@ class BilliardBaseEnv(gym.Env):
             dimensions=2
         )
         
-        # Add monitors for all output ports
-        mode_monitors = []
-        for port in self.output_ports:
-            monitor = sim.add_mode_monitor(
-                self.fsrc, 0, 1,
-                mp.ModeRegion(
-                    center=port["position"],
-                    size=mp.Vector3(0, self.waveguide_width-0.1)
-                )
-            )
-            mode_monitors.append(monitor)
-        
-        if not run:
-            plt.figure()
-            sim.plot2D(plot_eps_flag=True)
-            return []
+        results = []
 
-        else:    
+        if matrix_type == "TM":
+            # Add monitors for all output ports
+            mode_monitors = []
+            for port in self.output_ports:
+                monitor = sim.add_mode_monitor(
+                    self.fsrc, 0, 1,
+                    mp.ModeRegion(
+                        center=port["position"],
+                        size=mp.Vector3(0, self.waveguide_width-0.1)
+                    )
+                )
+                mode_monitors.append(monitor)
+            
+            # sim.plot2D(plot_eps_flag=True)
+
             # Run simulation
             sim.run(until=self.n_runs)
             
-            plt.figure()
-            field_func = lambda x: np.sqrt(np.abs(x)) # lambda x: 20*np.log10(np.abs(x))
-            sim.plot2D(fields=mp.Ey,
-                    field_parameters={'alpha':1, 'cmap':'hsv', 'interpolation':'spline36', 'post_process':field_func, 'colorbar':False},
-                    boundary_parameters={'hatch':'o', 'linewidth':1.5, 'facecolor':'y', 'edgecolor':'b', 'alpha':0.3},
-                    eps_parameters={'alpha':1, 'contour':False}
-                )
-            # plt.xlim(-self.sx/2 - 5, self.sx/2 + 5)
-            plt.show()
+            if visualize:
+                plt.figure()
+                field_func = lambda x: np.sqrt(np.abs(x)) # lambda x: 20*np.log10(np.abs(x))
+                sim.plot2D(fields=mp.Ey,
+                        field_parameters={'alpha':1, 'cmap':'hsv', 'interpolation':'spline36', 'post_process':field_func, 'colorbar':False},
+                        boundary_parameters={'hatch':'o', 'linewidth':1.5, 'facecolor':'y', 'edgecolor':'b', 'alpha':0.3},
+                        eps_parameters={'alpha':1, 'contour':False}
+                    )
+                # plt.xlim(-self.sx/2 - 5, self.sx/2 + 5)
+                plt.show()
 
-            # Calculate transmission coefficients for all output ports
-            results = []
+            # Calculate transmission coefficients for all output ports      
             for monitor in mode_monitors:
                 mode_data = sim.get_eigenmode_coefficients(
                     monitor, [1],
-                    eig_parity=mp.EVEN_Z + mp.ODD_Y
+                    eig_parity=self.eig_parity
                 )
                 results.append(mode_data.alpha[0,0,0])
+
+        else:
+            # Add monitors for all reflection ports
+            mode_monitors = []
+            for port in self.reflection_ports:
+                monitor = sim.add_mode_monitor(
+                    self.fsrc, 0, 1,
+                    mp.ModeRegion(
+                        center=port["position"],
+                        size=mp.Vector3(0, self.waveguide_width-0.1)
+                    )
+                )
+                mode_monitors.append(monitor)
+
+            # Run simulation
+            sim.run(until=self.n_runs)
             
-            sim.reset_meep()  # Explicitly reset MEEP to free memory
-            return results
+            if visualize:
+                plt.figure()
+                field_func = lambda x: np.sqrt(np.abs(x)) # lambda x: 20*np.log10(np.abs(x))
+                sim.plot2D(fields=mp.Ey,
+                        field_parameters={'alpha':1, 'cmap':'hsv', 'interpolation':'spline36', 'post_process':field_func, 'colorbar':False},
+                        boundary_parameters={'hatch':'o', 'linewidth':1.5, 'facecolor':'y', 'edgecolor':'b', 'alpha':0.3},
+                        eps_parameters={'alpha':1, 'contour':False}
+                    )
+                # plt.xlim(-self.sx/2 - 5, self.sx/2 + 5)
+                plt.show()
+
+            # Calculate transmission coefficients for all output ports
+            for monitor in mode_monitors:
+                mode_data = sim.get_eigenmode_coefficients(
+                    monitor, [1],
+                    eig_parity=self.eig_parity
+                )
+                results.append(mode_data.alpha[0,0,1])
+
+        sim.reset_meep()  # Explicitly reset MEEP to free memory
+        return results
         
     def step(self, action) -> tuple[spaces.Box, np.float32, bool, bool, dict[str, typing.Any]]:
         self.step_count += 1
@@ -204,11 +244,11 @@ class BilliardBaseEnv(gym.Env):
         scaling_factor = 0.001  # Control adjustment size
         self.scatter_pos = np.clip(self.scatter_pos + action * scaling_factor, -1, 1)
         
-        # Calculate transmission matrix with new positions
-        tm = self._calculate_tm(self.scatter_pos)
+        # Calculate sub SM with new positions
+        subSM = self._calculate_subSM(self.scatter_pos, matrix_type="TM", visualize=False)
         
         # Calculate reward and error
-        reward, error = self._calculate_reward(tm)
+        reward, error = self._calculate_reward(subSM)
         
         # Update best positions if current error is lower than best error
         if error < self.best_error:

@@ -22,19 +22,19 @@ class BilliardTwoEnv(BilliardBaseEnv):
 
         # Define ports
         self.source_ports = [
-            {"name": "left_top", "position": mp.Vector3(-self.sx/2-self.waveguide_length+self.pml_thickness+self.source_pml_distance, self.waveguide_offset), "direction": mp.X},
-            {"name": "left_bottom", "position": mp.Vector3(-self.sx/2-self.waveguide_length+self.pml_thickness+self.source_pml_distance, -self.waveguide_offset), "direction": mp.X}
+            {"name": "left_top", "position": mp.Vector3(-self.sx/2-self.source_billiard_distance, self.waveguide_offset), "direction": mp.X},
+            {"name": "left_bottom", "position": mp.Vector3(-self.sx/2-self.source_billiard_distance, -self.waveguide_offset), "direction": mp.X}
         ]
 
         self.output_ports = [
-            {"name": "right_top", "position": mp.Vector3(self.sx/2+self.waveguide_length-self.pml_thickness-self.source_pml_distance, self.waveguide_offset), "direction": mp.X},
-            {"name": "right_bottom", "position": mp.Vector3(self.sx/2+self.waveguide_length-self.pml_thickness-self.source_pml_distance, -self.waveguide_offset), "direction": mp.X}
+            {"name": "right_top", "position": mp.Vector3(self.sx/2+self.source_billiard_distance, self.waveguide_offset), "direction": mp.X},
+            {"name": "right_bottom", "position": mp.Vector3(self.sx/2+self.source_billiard_distance, -self.waveguide_offset), "direction": mp.X}
         ]
 
-        # Meep use the 'last object wins' principle, ie, if multiple objects overlap, later objects in the list take precedence. 
-        # Allow overlapping simplifies implementation and help explore more diverse configurations.
-        # Initial scatterer positions, this is normalized position !!!
-        self.scatter_pos = self._generate_initial_positions()
+        self.reflection_ports = [
+            {"name": "left_top", "position": mp.Vector3(-self.sx/2-self.source_billiard_distance+3, self.waveguide_offset), "direction": mp.X},
+            {"name": "left_bottom", "position": mp.Vector3(-self.sx/2-self.source_billiard_distance+3, -self.waveguide_offset), "direction": mp.X}
+        ]
 
     def _create_base_geometry(self):
         # Create the base geometry (billiard and waveguides)
@@ -147,9 +147,7 @@ if __name__ == "__main__":
     # check_env(env)
     # print("check env end")
 
-    # print(env._calculate_tm(env.scatter_pos))
-
-    tm_sample = env._calculate_tm(env.scatter_pos)
+    tm_sample = env._calculate_subSM(env.scatter_pos, matrix_type="RM", visualize=True)
     print(tm_sample)
     print(env._calculate_reward(tm_sample))
     # env.render()
