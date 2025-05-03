@@ -1,6 +1,6 @@
 import numpy as np
 import stable_baselines3
-from stable_baselines3 import PPO
+from stable_baselines3 import PPO, SAC
 # from stable_baselines3.common.callbacks import StopTrainingOnNoModelImprovement, StopTrainingOnRewardThreshold, EvalCallback
 from stable_baselines3.common.monitor import Monitor
 # from stable_baselines3.common.vec_env import DummyVecEnv
@@ -98,24 +98,48 @@ def train(env_name, algo_name):
 
     error_threshold = 0.1
 
-    policy_kwargs = dict(
-        net_arch=dict(pi=[256, 256], vf=[256, 256]),
-        activation_fn=torch.nn.ReLU  # ReLU often works better than tanh for physics problems
-    )
-
     # Linear learning rate decay
     lr_schedule = get_linear_fn(start=3e-4, end=1e-5, end_fraction=0.8)
-    # Initialize the model
-    # batch_size=64
-    model = PPO('MlpPolicy', env, verbose=1, device='cpu', 
+
+    model = None
+
+    if algo_name == "PPO":
+        policy_kwargs_PPO = dict( # this policy is for PPO
+            net_arch=dict(pi=[256, 256], vf=[256, 256]),
+            activation_fn=torch.nn.ReLU  # ReLU often works better than tanh for physics problems
+        )
+
+        # Initialize the model
+        model = PPO('MlpPolicy', env, verbose=1, device='cpu', 
+                    learning_rate=lr_schedule,
+                    policy_kwargs=policy_kwargs_PPO,  # Larger policy network
+                    n_steps=512, batch_size=128, 
+                    n_epochs=5, clip_range=0.2,
+                    gamma=0.999, tensorboard_log=log_dir)
+
+    if algo_name == "SAC":
+        policy_kwargs_SAC = dict( # this policy is for SAC,  SAC uses Q-functions (critics) instead of value functions, so need to use the qf key.
+            net_arch=dict(
+                pi=[256, 256],  # Actor/policy network architecture
+                qf=[256, 256]   # Critic/Q-function network architecture
+            ),
+            activation_fn=torch.nn.ReLU
+        )
+
+        model = SAC('MlpPolicy', env, verbose=1, device='cpu', 
                 learning_rate=lr_schedule,
-                policy_kwargs=policy_kwargs,  # Larger policy network
-                n_steps=512, batch_size=128, 
-                n_epochs=5, clip_range=0.2,
-                gamma=0.999, tensorboard_log=log_dir)
+                policy_kwargs=policy_kwargs_SAC,
+                batch_size=128,
+                buffer_size=100000,  # Experience replay buffer size
+                train_freq=1,
+                gradient_steps=1,
+                gamma=0.999,
+                tau=0.005,  # For soft target updates
+                ent_coef='auto',  # Automatic entropy tuning
+                tensorboard_log=log_dir)
 
     # Create callback
-    callback = SaveBestPosCallback(
+    saveBestPosCallback = SaveBestPosCallback(
         error_threshold=error_threshold,
         save_freq=1000,  # Save checkpoint every 1000 steps
         verbose=1
@@ -125,20 +149,20 @@ def train(env_name, algo_name):
         # Train until we find a satisfactory solution
         model.learn(
             total_timesteps=1000000,  # Maximum steps if solution isn't found
-            callback=[callback, tensorboardStepCallback],
+            callback=[saveBestPosCallback, tensorboardStepCallback],
             tb_log_name=f"{env_name}_{algo_name}"
         )
     except Exception as e:
         print(f"Training stopped: {e}")
    
-    if callback.best_error < error_threshold:
+    if saveBestPosCallback.best_error < error_threshold:
         print("Successfully found solution:")
-        print(f"Best error: {callback.best_error}")
-        print(f"Best position: {callback.best_pos}")
-        return callback.best_pos
+        print(f"Best error: {saveBestPosCallback.best_error}")
+        print(f"Best position: {saveBestPosCallback.best_pos}")
+        return saveBestPosCallback.best_pos
     else:
-        print(f"Could not find solution below threshold. Best error: {callback.best_error}")
-        return callback.best_pos  # Return best found even if not below threshold
+        print(f"Could not find solution below threshold. Best error: {saveBestPosCallback.best_error}")
+        return saveBestPosCallback.best_pos  # Return best found even if not below threshold
 
 
 
@@ -163,8 +187,8 @@ if __name__ == '__main__':
     # sb3_class = getattr(stable_baselines3, args.sb3_algo)
 
 
-    env_name = "BilliardTwoEnv2FixedTarget_pp"
     algo_name = "PPO"
+    env_name = "BilliardTwo_Env10_FixedTarget_" + algo_name
 
     sb3_class = getattr(stable_baselines3, algo_name)
 
