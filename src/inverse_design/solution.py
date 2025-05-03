@@ -1,5 +1,4 @@
 import numpy as np
-import stable_baselines3
 from stable_baselines3 import PPO, SAC
 # from stable_baselines3.common.callbacks import StopTrainingOnNoModelImprovement, StopTrainingOnRewardThreshold, EvalCallback
 from stable_baselines3.common.monitor import Monitor
@@ -188,10 +187,7 @@ if __name__ == '__main__':
 
 
     algo_name = "PPO"
-    env_name = "BilliardTwo_Env10_FixedTarget_" + algo_name
-
-    sb3_class = getattr(stable_baselines3, algo_name)
-
+    env_name = "BilliardTwo_Env10_Rank1"
 
     ## without parallel computing
     # env = BilliardTwoEnv()
