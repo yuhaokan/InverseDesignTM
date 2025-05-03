@@ -38,6 +38,8 @@ class BilliardBaseEnv(gym.Env):
         self.waveguide_width = 1.2
         self.waveguide_offset = 6.0  # waveguide center distance to billiard horizontal midline
         self.metal_thickness = 0.2
+
+        self.source_length_diff = 0.2  # diff between source & waveguide_width
         
         self.pml_thickness = 3.0
         self.source_pml_distance = 3.0   # distance between source/montor and PML 
@@ -157,7 +159,7 @@ class BilliardBaseEnv(gym.Env):
         sources = [mp.EigenModeSource(
             mp.ContinuousSource(frequency=self.fsrc),
             center=input_port["position"],
-            size=mp.Vector3(0, self.waveguide_width-0.1),
+            size=mp.Vector3(0, self.waveguide_width - self.source_length_diff),
             eig_band=self.mode_num,
             eig_parity=self.eig_parity
         )]
@@ -183,7 +185,7 @@ class BilliardBaseEnv(gym.Env):
             self.fsrc, 0, 1,
             mp.ModeRegion(
                 center=monitor_pos,
-                size=mp.Vector3(0, self.waveguide_width-0.1)
+                size=mp.Vector3(0, self.waveguide_width - self.source_length_diff)
             )
         )
         
@@ -248,7 +250,7 @@ class BilliardBaseEnv(gym.Env):
         sources = [mp.EigenModeSource(
             mp.ContinuousSource(frequency=self.fsrc),
             center=input_port["position"],
-            size=mp.Vector3(0, self.waveguide_width-0.1),
+            size=mp.Vector3(0, self.waveguide_width - self.source_length_diff),
             eig_band=self.mode_num,
             eig_parity=self.eig_parity
         )]
@@ -272,7 +274,7 @@ class BilliardBaseEnv(gym.Env):
                     self.fsrc, 0, 1,
                     mp.ModeRegion(
                         center=port["position"],
-                        size=mp.Vector3(0, self.waveguide_width-0.1)
+                        size=mp.Vector3(0, self.waveguide_width - self.source_length_diff)
                     )
                 )
                 mode_monitors.append(monitor)
@@ -309,7 +311,7 @@ class BilliardBaseEnv(gym.Env):
                     self.fsrc, 0, 1,
                     mp.ModeRegion(
                         center=port["position"],
-                        size=mp.Vector3(0, self.waveguide_width-0.1)
+                        size=mp.Vector3(0, self.waveguide_width - self.source_length_diff)
                     )
                 )
                 mode_monitors.append(monitor)
