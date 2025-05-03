@@ -74,7 +74,8 @@ class BilliardBaseEnv(gym.Env):
         # mp.EVEN_Z + mp.ODD_Y -> Ex, Ey, Hz !=0; Ez, Hx, Hy =0
         # mp.EVEN_Y + mp.ODD_Z -> Ex, Ey, Hz =0;  Ez, Hx, Hy !=0
         # mp.EVEN_Y -> all elements !=0
-        self.eig_parity = mp.EVEN_Y
+        # mp.NO_PARITY
+        self.eig_parity = mp.NO_PARITY
 
     def _generate_initial_positions(self, seed=None):
         # Generate and normalize random positions
@@ -202,7 +203,7 @@ class BilliardBaseEnv(gym.Env):
         # print(incoming_amplitude)
         return incoming_amplitude
 
-    def calculate_normalized_subSM(self, normalized_scatterers_positions, matrix_type="TM", visualize=False):
+    def _calculate_normalized_subSM(self, normalized_scatterers_positions, matrix_type="TM", visualize=False):
         """
         Calculate normalized scattering matrix (TM or RM) by dividing by the incoming field amplitude.
         

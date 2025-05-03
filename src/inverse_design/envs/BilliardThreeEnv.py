@@ -169,9 +169,10 @@ if __name__ == "__main__":
     # check_env(env)
     # print("check env end")
 
-    rm = env.calculate_normalized_subSM(env.scatter_pos, matrix_type="RM", visualize=False)
-    tm = env.calculate_normalized_subSM(env.scatter_pos, matrix_type="TM", visualize=False)
-    # print(tm)
-    # print(env._calculate_reward(tm))
+    normalized_rm = env._calculate_normalized_subSM(env.scatter_pos, matrix_type="RM", visualize=False)
+    normalized_tm = env._calculate_normalized_subSM(env.scatter_pos, matrix_type="TM", visualize=False)
+    print(normalized_rm @ np.conj(normalized_rm).T + normalized_tm @ np.conj(normalized_tm).T)
 
-    print(rm @ np.conj(rm).T + tm @ np.conj(tm).T)
+    # tm_sample = env._calculate_subSM(env.scatter_pos, matrix_type="RM", visualize=True)
+    # print(tm_sample)
+    # print(env._calculate_reward(tm_sample))
