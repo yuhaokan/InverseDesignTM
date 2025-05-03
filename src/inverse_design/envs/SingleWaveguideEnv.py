@@ -129,7 +129,7 @@ class SingleWaveguideEnv():
             eig_parity=mp.EVEN_Y
         )
 
-        transmission = abs(mode_data.alpha[0, 0, 0]) ** 2
+        transmission = mode_data.alpha[0, 0, 0]
 
         sim.reset_meep()  # Free MEEP memory
 

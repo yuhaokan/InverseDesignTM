@@ -71,8 +71,10 @@ class BilliardBaseEnv(gym.Env):
         # Initial scatterer positions, this is normalized position !!!
         self.scatter_pos = self._generate_initial_positions()
 
-        # self.eig_parity = mp.EVEN_Y
-        self.eig_parity = mp.EVEN_Z + mp.ODD_Y
+        # mp.EVEN_Z + mp.ODD_Y -> Ex, Ey, Hz !=0; Ez, Hx, Hy =0
+        # mp.EVEN_Y + mp.ODD_Z -> Ex, Ey, Hz =0;  Ez, Hx, Hy !=0
+        # mp.EVEN_Y -> all elements !=0
+        self.eig_parity = mp.EVEN_Y
 
     def _generate_initial_positions(self, seed=None):
         # Generate and normalize random positions
@@ -183,7 +185,7 @@ class BilliardBaseEnv(gym.Env):
             if visualize:
                 plt.figure()
                 field_func = lambda x: np.sqrt(np.abs(x)) # lambda x: 20*np.log10(np.abs(x))
-                sim.plot2D(fields=mp.Ey,
+                sim.plot2D(fields=mp.Ez,
                         field_parameters={'alpha':1, 'cmap':'hsv', 'interpolation':'spline36', 'post_process':field_func, 'colorbar':False},
                         boundary_parameters={'hatch':'o', 'linewidth':1.5, 'facecolor':'y', 'edgecolor':'b', 'alpha':0.3},
                         eps_parameters={'alpha':1, 'contour':False}
@@ -218,7 +220,7 @@ class BilliardBaseEnv(gym.Env):
             if visualize:
                 plt.figure()
                 field_func = lambda x: np.sqrt(np.abs(x)) # lambda x: 20*np.log10(np.abs(x))
-                sim.plot2D(fields=mp.Ey,
+                sim.plot2D(fields=mp.Ez,
                         field_parameters={'alpha':1, 'cmap':'hsv', 'interpolation':'spline36', 'post_process':field_func, 'colorbar':False},
                         boundary_parameters={'hatch':'o', 'linewidth':1.5, 'facecolor':'y', 'edgecolor':'b', 'alpha':0.3},
                         eps_parameters={'alpha':1, 'contour':False}

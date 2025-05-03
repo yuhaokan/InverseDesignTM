@@ -1,8 +1,13 @@
 import numpy as np
 import meep as mp
-# from gymnasium.utils.env_checker import check_env
+from gymnasium.utils.env_checker import check_env
 
-from base_env import BilliardBaseEnv
+try:
+    # Try relative i,port first (when used as part of the package)
+    from .base_env import BilliardBaseEnv
+except ImportError:
+    # Fall back to direct import (when run as a script)
+    from base_env import BilliardBaseEnv
 
 # Suppress logging
 mp.verbosity(0)
@@ -22,6 +27,12 @@ class BilliardThreeEnv(BilliardBaseEnv):
             {"name": "right_top", "position": mp.Vector3(self.sx/2+self.source_billiard_distance, self.waveguide_offset), "direction": mp.X},
             {"name": "right_center", "position": mp.Vector3(self.sx/2+self.source_billiard_distance, 0), "direction": mp.X},
             {"name": "right_bottom", "position": mp.Vector3(self.sx/2+self.source_billiard_distance, -self.waveguide_offset), "direction": mp.X}
+        ]
+
+        self.reflection_ports = [
+            {"name": "left_top", "position": mp.Vector3(-self.sx/2-self.source_billiard_distance/2, self.waveguide_offset), "direction": mp.X},
+            {"name": "left_center", "position": mp.Vector3(-self.sx/2-self.source_billiard_distance/2, 0), "direction": mp.X},
+            {"name": "left_bottom", "position": mp.Vector3(-self.sx/2-self.source_billiard_distance/2, -self.waveguide_offset), "direction": mp.X}
         ]
     
     def _create_base_geometry(self):
@@ -158,6 +169,9 @@ if __name__ == "__main__":
     # check_env(env)
     # print("check env end")
 
-    tm_sample = env._calculate_subSM(env.scatter_pos, matrix_type="TM")
-    print(tm_sample)
-    print(env._calculate_reward(tm_sample))
+    rm = env._calculate_subSM(env.scatter_pos, matrix_type="RM", visualize=False)
+    tm = env._calculate_subSM(env.scatter_pos, matrix_type="TM", visualize=False)
+    # print(tm)
+    # print(env._calculate_reward(tm))
+
+    print(rm @ np.conj(rm).T + tm @ np.conj(tm).T)

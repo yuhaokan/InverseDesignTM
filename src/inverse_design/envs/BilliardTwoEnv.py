@@ -1,11 +1,15 @@
 import numpy as np
 import meep as mp
 # from gymnasium.envs.registration import register
-# from gymnasium.utils.env_checker import check_env
+from gymnasium.utils.env_checker import check_env
 # from stable_baselines3.common.vec_env import DummyVecEnv
 
-from base_env import BilliardBaseEnv
-
+try:
+    # Try relative i,port first (when used as part of the package)
+    from .base_env import BilliardBaseEnv
+except ImportError:
+    # Fall back to direct import (when run as a script)
+    from base_env import BilliardBaseEnv
 
 # Suppress logging
 mp.verbosity(0)
@@ -32,8 +36,8 @@ class BilliardTwoEnv(BilliardBaseEnv):
         ]
 
         self.reflection_ports = [
-            {"name": "left_top", "position": mp.Vector3(-self.sx/2-self.source_billiard_distance+3, self.waveguide_offset), "direction": mp.X},
-            {"name": "left_bottom", "position": mp.Vector3(-self.sx/2-self.source_billiard_distance+3, -self.waveguide_offset), "direction": mp.X}
+            {"name": "left_top", "position": mp.Vector3(-self.sx/2-self.source_billiard_distance/2, self.waveguide_offset), "direction": mp.X},
+            {"name": "left_bottom", "position": mp.Vector3(-self.sx/2-self.source_billiard_distance/2, -self.waveguide_offset), "direction": mp.X}
         ]
 
     def _create_base_geometry(self):
@@ -147,7 +151,7 @@ if __name__ == "__main__":
     # check_env(env)
     # print("check env end")
 
-    tm_sample = env._calculate_subSM(env.scatter_pos, matrix_type="RM", visualize=True)
+    tm_sample = env._calculate_subSM(env.scatter_pos, matrix_type="RM", visualize=False)
     print(tm_sample)
     print(env._calculate_reward(tm_sample))
     # env.render()

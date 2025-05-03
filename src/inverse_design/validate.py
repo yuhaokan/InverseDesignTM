@@ -8,8 +8,7 @@ print(error)
 
 env = BilliardTwoEnv()
 # env.reset(seed=55)
-tm = env._calculate_tm(pos)
-# tm = env._calculate_tm_v2(pos)
+tm = env._calculate_subSM(pos, matrix_type="TM", visualize=True)
 
 print(env._calculate_reward(tm))
 
@@ -18,4 +17,3 @@ print(tm)
 print(tm[:,1]/tm[:,0])
 
 print(np.angle(tm[:,1]/tm[:,0]), np.abs(tm[:,1]/tm[:,0]))
-
