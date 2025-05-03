@@ -129,7 +129,7 @@ class SingleWaveguideEnv():
             eig_parity=mp.EVEN_Y
         )
 
-        transmission = mode_data.alpha[0, 0, 0]
+        transmission = abs(mode_data.alpha[0, 0, 0])
 
         sim.reset_meep()  # Free MEEP memory
 
@@ -137,5 +137,5 @@ class SingleWaveguideEnv():
 
 # Example usage:
 waveguide = SingleWaveguideEnv()
-transmission = waveguide.run_simulation(visualize=True)
+transmission = waveguide.run_simulation(visualize=False)
 print(f"Transmission: {transmission}")

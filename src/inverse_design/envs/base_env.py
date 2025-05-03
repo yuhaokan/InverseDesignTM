@@ -126,6 +126,105 @@ class BilliardBaseEnv(gym.Env):
             
         return geometry
     
+    def _measure_incoming_amplitudes(self):
+        """
+        Measure the incoming field amplitude for a single source port.
+        Since all source ports have identical waveguides, one measurement is sufficient.
+        
+        Returns:
+            Incoming field amplitude
+        """
+        # Use the first source port as reference
+        input_port = self.source_ports[0]
+        
+        # Create a simulation with just a single waveguide
+        waveguide_only_geometry = []
+        
+        # Add only one waveguide
+        self._create_metal_waveguide(
+            waveguide_only_geometry,
+            input_port["position"].x,
+            input_port["position"].y,
+            self.waveguide_length,
+            self.waveguide_width
+        )
+        
+        # Create simulation for reference incoming field
+        cell_size = mp.Vector3(self.sx + 2*self.waveguide_length, self.sy + 2*self.metal_thickness)
+        pml_layers = [mp.PML(self.pml_thickness, direction=mp.X)]
+        
+        sources = [mp.EigenModeSource(
+            mp.ContinuousSource(frequency=self.fsrc),
+            center=input_port["position"],
+            size=mp.Vector3(0, self.waveguide_width-0.1),
+            eig_band=self.mode_num,
+            eig_parity=self.eig_parity
+        )]
+        
+        ref_sim = mp.Simulation(
+            cell_size=cell_size,
+            boundary_layers=pml_layers,
+            geometry=waveguide_only_geometry,
+            sources=sources,
+            resolution=self.resolution,
+            dimensions=2
+        )
+        
+        # Add a monitor slightly in front of the source to measure incoming field
+        # Place it a small distance in the direction of propagation
+        monitor_pos = mp.Vector3(
+            input_port["position"].x + 3,  # Slightly in front of source
+            input_port["position"].y,
+            input_port["position"].z
+        )
+        
+        source_monitor = ref_sim.add_mode_monitor(
+            self.fsrc, 0, 1,
+            mp.ModeRegion(
+                center=monitor_pos,
+                size=mp.Vector3(0, self.waveguide_width-0.1)
+            )
+        )
+        
+        # Run reference simulation
+        ref_sim.run(until=self.n_runs)  # Shorter run time is sufficient for straight waveguide
+        
+        # Get the incoming field amplitude
+        source_data = ref_sim.get_eigenmode_coefficients(
+            source_monitor, [1],
+            eig_parity=self.eig_parity
+        )
+        incoming_amplitude = abs(source_data.alpha[0,0,0])
+        
+        # Clean up
+        ref_sim.reset_meep()
+        
+        # print(incoming_amplitude)
+        return incoming_amplitude
+
+    def calculate_normalized_subSM(self, normalized_scatterers_positions, matrix_type="TM", visualize=False):
+        """
+        Calculate normalized scattering matrix (TM or RM) by dividing by the incoming field amplitude.
+        
+        Args:
+            normalized_scatterers_positions: Normalized positions of scatterers
+            matrix_type: "TM" for transmission matrix or "RM" for reflection matrix
+            visualize: Boolean to enable visualization
+            
+        Returns:
+            Normalized scattering matrix
+        """
+        # First, calculate the incoming field amplitudes at each source port
+        incoming_amplitudes = self._measure_incoming_amplitudes()
+        
+        # Calculate the scattering matrix using the existing method
+        sub_matrix = self._calculate_subSM(normalized_scatterers_positions, matrix_type, visualize)
+        
+        # Normalize the scattering matrix by dividing each row by the corresponding incoming amplitude
+        normalized_matrix = sub_matrix / incoming_amplitudes
+        
+        return normalized_matrix
+
     def _calculate_subSM(self, normalized_scatterers_positions, matrix_type="TM", visualize=False):
         
         # Create geometry with scatterers

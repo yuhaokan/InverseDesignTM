@@ -169,8 +169,8 @@ if __name__ == "__main__":
     # check_env(env)
     # print("check env end")
 
-    rm = env._calculate_subSM(env.scatter_pos, matrix_type="RM", visualize=False)
-    tm = env._calculate_subSM(env.scatter_pos, matrix_type="TM", visualize=False)
+    rm = env.calculate_normalized_subSM(env.scatter_pos, matrix_type="RM", visualize=False)
+    tm = env.calculate_normalized_subSM(env.scatter_pos, matrix_type="TM", visualize=False)
     # print(tm)
     # print(env._calculate_reward(tm))
 
