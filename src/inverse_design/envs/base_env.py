@@ -18,9 +18,9 @@ class BilliardBaseEnv(gym.Env):
         # MEEP simulation parameters
         self.resolution = 15  # pixels/cm
 
-        # env4, 5, 6 -> 100
+        # env4, 5, 6, 11 -> 100
         # env10 -> 200
-        self.n_runs = 200     # number of runs during simulation ############################################################### hyper-parameter 1
+        self.n_runs = 100     # number of runs during simulation ############################################################### hyper-parameter 1
 
 
         '''
@@ -43,7 +43,7 @@ class BilliardBaseEnv(gym.Env):
         self.metal_thickness = 0.2
 
         # env4, 5, 6 -> 0.1
-        # env10  -> 0.2
+        # env10, 11  -> 0.2
         self.source_length_diff = 0.2  # diff between source & waveguide_width    ####################################################################  hyper-parameter 2
         
         self.pml_thickness = 3.0
@@ -55,7 +55,7 @@ class BilliardBaseEnv(gym.Env):
         self.epsilon_bg = 1.0
 
         # env4 -> 3.9
-        # env5,6,10 -> 2.1
+        # env5,6,10, 11 -> 2.1
         self.epsilon_scatter = 2.1     ####################################################################  hyper-parameter 3
         
         self.mode_num = 1
@@ -82,13 +82,13 @@ class BilliardBaseEnv(gym.Env):
         self.scatter_pos = self._generate_initial_positions()
 
         # env4, 5 -> mp.EVEN_Z + mp.ODD_Y
-        # env6 -> mp.EVEN_Y + mp.ODD_Z
+        # env6, 11 -> mp.EVEN_Y + mp.ODD_Z
         # env10 -> mp.NO_PARITY
         # mp.EVEN_Z + mp.ODD_Y -> Ex, Ey, Hz !=0; Ez, Hx, Hy =0
         # mp.EVEN_Y + mp.ODD_Z -> Ex, Ey, Hz =0;  Ez, Hx, Hy !=0
         # mp.EVEN_Y -> all elements !=0
         # mp.NO_PARITY
-        self.eig_parity = mp.NO_PARITY                     ####################################################### hyper-parameter 4
+        self.eig_parity = mp.EVEN_Y + mp.ODD_Z                   ####################################################### hyper-parameter 4
 
     def _generate_initial_positions(self, seed=None):
         # Generate and normalize random positions
@@ -630,6 +630,9 @@ class BilliardBaseEnv(gym.Env):
         
         # The lowest transmission eigenchannel corresponds to the smallest singular value
         min_idx = np.argmin(S)
+
+        # Overwrite to plot the higheset eigenchannel
+        # min_idx = 0
 
         # Get the input state (right singular vector) corresponding to the lowest eigenchannel
         v_min = Vh[min_idx, :].conj()  # Complex conjugate for correct phase
