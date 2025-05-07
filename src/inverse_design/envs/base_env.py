@@ -42,7 +42,9 @@ class BilliardBaseEnv(gym.Env):
         self.waveguide_offset = 6.0  # waveguide center distance to billiard horizontal midline
         self.metal_thickness = 0.2
 
-        self.source_length_diff = 0.2  # diff between source & waveguide_width
+        # env4, 5, 6 -> 0.1
+        # env10  -> 0.2
+        self.source_length_diff = 0.2  # diff between source & waveguide_width    ####################################################################  hyper-parameter 2
         
         self.pml_thickness = 3.0
         self.source_pml_distance = 3.0   # distance between source/montor and PML 
@@ -54,7 +56,7 @@ class BilliardBaseEnv(gym.Env):
 
         # env4 -> 3.9
         # env5,6,10 -> 2.1
-        self.epsilon_scatter = 2.1     ####################################################################  hyper-parameter 2
+        self.epsilon_scatter = 2.1     ####################################################################  hyper-parameter 3
         
         self.mode_num = 1
         
@@ -86,7 +88,7 @@ class BilliardBaseEnv(gym.Env):
         # mp.EVEN_Y + mp.ODD_Z -> Ex, Ey, Hz =0;  Ez, Hx, Hy !=0
         # mp.EVEN_Y -> all elements !=0
         # mp.NO_PARITY
-        self.eig_parity = mp.NO_PARITY          ####################################################### hyper-parameter 3
+        self.eig_parity = mp.NO_PARITY                     ####################################################### hyper-parameter 4
 
     def _generate_initial_positions(self, seed=None):
         # Generate and normalize random positions
@@ -297,10 +299,11 @@ class BilliardBaseEnv(gym.Env):
                 plt.figure()
                 field_func = lambda x: np.sqrt(np.abs(x)) # lambda x: 20*np.log10(np.abs(x))
                 sim.plot2D(fields=mp.Ez,
-                        field_parameters={'alpha':1, 'cmap':'hsv', 'interpolation':'spline36', 'post_process':field_func, 'colorbar':False},
+                        field_parameters={'alpha':1, 'cmap': 'viridis', 'interpolation':'spline36', 'post_process':field_func, 'colorbar':True},  # 'cmap':'hsv'
                         boundary_parameters={'hatch':'o', 'linewidth':1.5, 'facecolor':'y', 'edgecolor':'b', 'alpha':0.3},
-                        eps_parameters={'alpha':1, 'contour':False}
+                        eps_parameters={'alpha':0.8, 'contour':False}
                     )
+                
                 # plt.xlim(-self.sx/2 - 5, self.sx/2 + 5)
                 plt.show()
 
@@ -332,10 +335,11 @@ class BilliardBaseEnv(gym.Env):
                 plt.figure()
                 field_func = lambda x: np.sqrt(np.abs(x)) # lambda x: 20*np.log10(np.abs(x))
                 sim.plot2D(fields=mp.Ez,
-                        field_parameters={'alpha':1, 'cmap':'hsv', 'interpolation':'spline36', 'post_process':field_func, 'colorbar':False},
+                        field_parameters={'alpha':1, 'cmap':'viridis', 'interpolation':'spline36', 'post_process':field_func, 'colorbar':True},   # 'cmap':'hsv'
                         boundary_parameters={'hatch':'o', 'linewidth':1.5, 'facecolor':'y', 'edgecolor':'b', 'alpha':0.3},
-                        eps_parameters={'alpha':1, 'contour':False}
+                        eps_parameters={'alpha':0.8, 'contour':False}
                     )
+
                 # plt.xlim(-self.sx/2 - 5, self.sx/2 + 5)
                 plt.show()
 
