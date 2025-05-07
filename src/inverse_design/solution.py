@@ -90,7 +90,7 @@ class SaveBestPosCallback(BaseCallback):
             'best_error': self.best_error,
             'n_calls': self.n_calls
         }
-        np.save(os.path.join(self.save_path, 'best_pos.npy'), save_dict)
+        np.save(os.path.join(self.save_path, 'best_pos_' + env_name + '_' + algo_name + '.npy'), save_dict)
 
 
 def train(env_name, algo_name):

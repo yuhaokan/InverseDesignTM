@@ -2,18 +2,21 @@ from envs import BilliardTwoEnv
 from load_pos import load_best_pos
 import numpy as np
 
-pos, error = load_best_pos()
+pos, error = load_best_pos(best_pos_file_name = 'best_pos_rank1_ppo_2.npy')
 
 print(error)
 
 env = BilliardTwoEnv()
-# env.reset(seed=55)
-tm = env._calculate_subSM(pos, matrix_type="TM", visualize=True)
 
-print(env._calculate_reward(tm))
+# tm = env._calculate_subSM(pos, matrix_type="TM", visualize=False)
 
-print(tm)
+# print(env._calculate_reward(tm))
 
-print(tm[:,1]/tm[:,0])
+# print(tm)
 
-print(np.angle(tm[:,1]/tm[:,0]), np.abs(tm[:,1]/tm[:,0]))
+# print(tm[:,1]/tm[:,0])
+
+# print(np.angle(tm[:,1]/tm[:,0]), np.abs(tm[:,1]/tm[:,0]))
+
+
+env.plot_lowest_transmission_eigenchannel(pos)

@@ -17,7 +17,10 @@ class BilliardBaseEnv(gym.Env):
 
         # MEEP simulation parameters
         self.resolution = 15  # pixels/cm
-        self.n_runs = 200     # number of runs during simulation
+
+        # env4, 5, 6 -> 100
+        # env10 -> 200
+        self.n_runs = 200     # number of runs during simulation ############################################################### hyper-parameter 1
 
 
         '''
@@ -48,7 +51,10 @@ class BilliardBaseEnv(gym.Env):
         self.waveguide_length = self.source_pml_distance + self.source_billiard_distance + self.pml_thickness
 
         self.epsilon_bg = 1.0
-        self.epsilon_scatter = 2.1
+
+        # env4 -> 3.9
+        # env5,6,10 -> 2.1
+        self.epsilon_scatter = 2.1     ####################################################################  hyper-parameter 2
         
         self.mode_num = 1
         
@@ -73,11 +79,14 @@ class BilliardBaseEnv(gym.Env):
         # Initial scatterer positions, this is normalized position !!!
         self.scatter_pos = self._generate_initial_positions()
 
+        # env4, 5 -> mp.EVEN_Z + mp.ODD_Y
+        # env6 -> mp.EVEN_Y + mp.ODD_Z
+        # env10 -> mp.NO_PARITY
         # mp.EVEN_Z + mp.ODD_Y -> Ex, Ey, Hz !=0; Ez, Hx, Hy =0
         # mp.EVEN_Y + mp.ODD_Z -> Ex, Ey, Hz =0;  Ez, Hx, Hy !=0
         # mp.EVEN_Y -> all elements !=0
         # mp.NO_PARITY
-        self.eig_parity = mp.NO_PARITY
+        self.eig_parity = mp.NO_PARITY          ####################################################### hyper-parameter 3
 
     def _generate_initial_positions(self, seed=None):
         # Generate and normalize random positions
@@ -601,6 +610,84 @@ class BilliardBaseEnv(gym.Env):
         
         plt.tight_layout()
         plt.show()
+
+    def plot_lowest_transmission_eigenchannel(self, scatter_positions):
+        """
+        Plot the field pattern of the lowest transmission eigenchannel.
+        
+        Args:
+            scatter_positions: Normalized positions of the scatterers
+        """
+        # Calculate the transmission matrix
+        tm = self._calculate_normalized_subSM(scatter_positions, matrix_type="TM")
+        
+        # Perform SVD on the transmission matrix
+        U, S, Vh = np.linalg.svd(tm)
+        
+        # The lowest transmission eigenchannel corresponds to the smallest singular value
+        min_idx = np.argmin(S)
+
+        # Get the input state (right singular vector) corresponding to the lowest eigenchannel
+        v_min = Vh[min_idx, :].conj()  # Complex conjugate for correct phase
+        
+        print(f"Singular values: {S}")
+        print(f"Lowest transmission channel (singular value = {S[min_idx]}) selected")
+        
+        # Create geometry with scatterers
+        geometry = self._create_full_geometry(scatter_positions)
+        
+        # Create a custom source that excites the eigenchannel
+        sources = []
+        for i, port in enumerate(self.source_ports):
+            # Use the eigenvector component as amplitude/phase for each port
+            amplitude = v_min[i]
+            sources.append(mp.EigenModeSource(
+                mp.ContinuousSource(frequency=self.fsrc),
+                center=port["position"],
+                size=mp.Vector3(0, self.waveguide_width - self.source_length_diff),
+                eig_band=self.mode_num,
+                eig_parity=self.eig_parity,
+                amplitude=amplitude
+            ))
+        
+        # Setup simulation
+        cell_size = mp.Vector3(self.sx + 2*self.waveguide_length, self.sy + 2*self.metal_thickness)
+        pml_layers = [mp.PML(self.pml_thickness, direction=mp.X)]
+        
+        sim = mp.Simulation(
+            cell_size=cell_size,
+            boundary_layers=pml_layers,
+            geometry=geometry,
+            sources=sources,
+            resolution=self.resolution,
+            dimensions=2
+        )
+        
+        # Run simulation
+        sim.run(until=self.n_runs)
+        
+        # Plot the field
+        plt.figure(figsize=(12, 10))
+        
+        # Plot field intensity
+        field_func = lambda x: np.sqrt(np.abs(x))  # Field intensity visualization
+        sim.plot2D(fields=mp.Ez,
+                field_parameters={'alpha': 1, 'cmap': 'viridis', 
+                                'interpolation': 'spline36', 
+                                'post_process': field_func, 
+                                'colorbar': True},
+                boundary_parameters={'hatch': 'o', 'linewidth': 1.5, 
+                                    'facecolor': 'none', 'edgecolor': 'k', 
+                                    'alpha': 0.3},
+                eps_parameters={'alpha': 0.8, 'contour': False}
+                )
+        
+        plt.title(f"Field Pattern of Lowest Transmission Eigenchannel (σ = {S[min_idx]:.4f})")
+        plt.tight_layout()
+        plt.show()
+        
+        # Clean up
+        sim.reset_meep()
 
     def _create_base_geometry(self):
         """
