@@ -345,7 +345,7 @@ class BilliardBaseEnv(gym.Env):
         self.step_count += 1
 
         # Apply action (small adjustments to positions)
-        scaling_factor = 0.001  # Control adjustment size
+        scaling_factor = 0.005  # Control adjustment size
         self.scatter_pos = np.clip(self.scatter_pos + action * scaling_factor, -1, 1)
         
         # Calculate sub SM with new positions
