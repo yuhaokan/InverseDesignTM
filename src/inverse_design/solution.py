@@ -176,13 +176,17 @@ def train(env_name, algo_name):
             activation_fn=torch.nn.ReLU
         )
 
+        # With train_freq=1, gradient_steps=5, and n_envs=4:
+        # Each environment step collects 4 new transitions (one from each parallel environment)
+        # After collecting these 4 transitions, the agent performs 5 separate gradient updates
+        # Each gradient update uses a randomly sampled batch from the entire replay buffer (not just the 4 new transitions)
         model = SAC('MlpPolicy', env, verbose=1, device='cpu', 
                 learning_rate=lr_schedule,
                 policy_kwargs=policy_kwargs_SAC,
                 batch_size=128,
-                buffer_size=100000,  # Experience replay buffer size
-                train_freq=1,
-                gradient_steps=1,
+                buffer_size=50000,  # Experience replay buffer size
+                train_freq=4,
+                gradient_steps=4,
                 gamma=0.999,
                 tau=0.005,  # For soft target updates
                 ent_coef='auto',  # Automatic entropy tuning
@@ -238,7 +242,7 @@ if __name__ == '__main__':
     # sb3_class = getattr(stable_baselines3, args.sb3_algo)
 
 
-    algo_name = "PPO"
+    algo_name = "SAC"
     env_name = "BilliardTwo_Env12_Rank1"
 
     ## without parallel computing
