@@ -12,7 +12,7 @@ class BilliardBaseEnv(gym.Env):
         super().__init__()
 
         # Common initialization parameters
-        self.max_step = 2048   # for each episode, max steps we allowed
+        self.max_step = 512   # for each episode, max steps we allowed
         self.n_scatterers = 20
 
         # MEEP simulation parameters

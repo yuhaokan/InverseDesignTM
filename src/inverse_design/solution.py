@@ -30,6 +30,55 @@ python load_pos.py
 
 from stable_baselines3.common.callbacks import BaseCallback
     
+class TensorboardStepCallbackV2(BaseCallback):
+    def __init__(self, log_freq=32, verbose=0):
+        super().__init__(verbose)
+        self.log_freq = log_freq
+        self.last_log_step = 0
+        
+        # Track best reward since last logging
+        self.max_reward_since_last_log = float('-inf')
+        self.mean_reward_accumulator = []
+        
+    def _on_step(self) -> bool:
+        # Get current rewards
+        step_rewards = self.locals.get('rewards', [])
+        
+        # Always track the maximum reward and accumulate for mean, even if we don't log yet
+        if len(step_rewards) > 0:
+            current_max = np.max(step_rewards)
+            self.max_reward_since_last_log = max(self.max_reward_since_last_log, current_max)
+            self.mean_reward_accumulator.extend(step_rewards)
+            
+        # Only log at specified intervals
+        if self.num_timesteps - self.last_log_step >= self.log_freq:
+            # Log standard metrics from the model logger
+            loss_dict = self.model.logger.name_to_value
+            for key, value in loss_dict.items():
+                self.logger.record(key, value)
+            
+            # Log our tracked metrics
+            if self.max_reward_since_last_log > float('-inf'):
+                self.logger.record("rewards/tracked_max_reward", self.max_reward_since_last_log)
+            
+            if len(self.mean_reward_accumulator) > 0:
+                self.logger.record("rewards/tracked_mean_reward", np.mean(self.mean_reward_accumulator))
+                
+            # Log current episode stats if available
+            if len(step_rewards) > 0:
+                self.logger.record("rewards/current_step_reward_mean", np.mean(step_rewards))
+                self.logger.record("rewards/current_step_reward_max", np.max(step_rewards))
+            
+            # Make sure to dump the logs
+            self.logger.dump(self.num_timesteps)
+            
+            # Reset our trackers
+            self.last_log_step = self.num_timesteps
+            self.max_reward_since_last_log = float('-inf')
+            self.mean_reward_accumulator = []
+            
+        return True
+
 class TensorboardStepCallback(BaseCallback):
     def __init__(self, verbose=0):
         super().__init__(verbose)
@@ -112,8 +161,10 @@ def train(env_name, algo_name):
         model = PPO('MlpPolicy', env, verbose=1, device='cpu', 
                     learning_rate=lr_schedule,
                     policy_kwargs=policy_kwargs_PPO,  # Larger policy network
-                    n_steps=512, batch_size=128, 
-                    n_epochs=5, clip_range=0.2,
+                    n_steps=512,   # The number of steps to run for each environment per update, rollout buffer size is n_steps * n_envs
+                    batch_size=128, 
+                    n_epochs=5,    # Number of epoch the algo will iterate through the entire collected batch of experience during each training update
+                    clip_range=0.2,
                     gamma=0.999, tensorboard_log=log_dir)
 
     if algo_name == "SAC":
@@ -143,13 +194,14 @@ def train(env_name, algo_name):
         save_freq=1000,  # Save checkpoint every 1000 steps
         verbose=1
     )
-    tensorboardStepCallback = TensorboardStepCallback()
+    tensorboardStepCallback = TensorboardStepCallbackV2(log_freq=32)
     try:
         # Train until we find a satisfactory solution
         model.learn(
             total_timesteps=1000000,  # Maximum steps if solution isn't found
             callback=[saveBestPosCallback, tensorboardStepCallback],
-            tb_log_name=f"{env_name}_{algo_name}"
+            tb_log_name=f"{env_name}_{algo_name}",
+            log_interval=1
         )
     except Exception as e:
         print(f"Training stopped: {e}")
@@ -187,7 +239,7 @@ if __name__ == '__main__':
 
 
     algo_name = "PPO"
-    env_name = "BilliardTwo_Env10_Rank1"
+    env_name = "BilliardTwo_Env12_Rank1"
 
     ## without parallel computing
     # env = BilliardTwoEnv()
