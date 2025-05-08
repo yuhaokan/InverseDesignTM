@@ -252,7 +252,7 @@ class BilliardBaseEnv(gym.Env):
         
         return np.array(sub_matrix)
     
-    def _run_simulation_for_port(self, input_port, geometry, matrix_type="TM", visualize=False):
+    def _run_simulation_for_port(self, input_port, geometry, matrix_type="TM", visualize=False, field_component=mp.Ez):
         """Run simulation for a specific input port"""
         # Create a new simulation for this port
         cell_size = mp.Vector3(self.sx + 2*self.waveguide_length, self.sy + 2*self.metal_thickness)
@@ -298,7 +298,7 @@ class BilliardBaseEnv(gym.Env):
             if visualize:
                 plt.figure()
                 field_func = lambda x: np.sqrt(np.abs(x)) # lambda x: 20*np.log10(np.abs(x))
-                sim.plot2D(fields=mp.Ez,
+                sim.plot2D(fields=field_component,
                         field_parameters={'alpha':1, 'cmap': 'viridis', 'interpolation':'spline36', 'post_process':field_func, 'colorbar':True},  # 'cmap':'hsv'
                         boundary_parameters={'hatch':'o', 'linewidth':1.5, 'facecolor':'y', 'edgecolor':'b', 'alpha':0.3},
                         eps_parameters={'alpha':0.8, 'contour':False}
@@ -334,7 +334,7 @@ class BilliardBaseEnv(gym.Env):
             if visualize:
                 plt.figure()
                 field_func = lambda x: np.sqrt(np.abs(x)) # lambda x: 20*np.log10(np.abs(x))
-                sim.plot2D(fields=mp.Ez,
+                sim.plot2D(fields=field_component,
                         field_parameters={'alpha':1, 'cmap':'viridis', 'interpolation':'spline36', 'post_process':field_func, 'colorbar':True},   # 'cmap':'hsv'
                         boundary_parameters={'hatch':'o', 'linewidth':1.5, 'facecolor':'y', 'edgecolor':'b', 'alpha':0.3},
                         eps_parameters={'alpha':0.8, 'contour':False}
@@ -615,7 +615,7 @@ class BilliardBaseEnv(gym.Env):
         plt.tight_layout()
         plt.show()
 
-    def plot_lowest_transmission_eigenchannel(self, scatter_positions):
+    def plot_lowest_transmission_eigenchannel(self, scatter_positions, field_component=mp.Ez):
         """
         Plot the field pattern of the lowest transmission eigenchannel.
         
@@ -678,7 +678,7 @@ class BilliardBaseEnv(gym.Env):
         
         # Plot field intensity
         field_func = lambda x: np.sqrt(np.abs(x))  # Field intensity visualization
-        sim.plot2D(fields=mp.Ez,
+        sim.plot2D(fields=field_component,
                 field_parameters={'alpha': 1, 'cmap': 'viridis', 
                                 'interpolation': 'spline36', 
                                 'post_process': field_func, 
@@ -695,6 +695,88 @@ class BilliardBaseEnv(gym.Env):
         
         # Clean up
         sim.reset_meep()
+
+    def plot_speckle_patterns(self, scatter_positions, field_component=mp.Ez):
+        """
+        Plot the speckle pattern (field distribution) for each input port excited individually
+        using sim.plot2D() for visualization.
+        
+        Args:
+            scatter_positions: Normalized positions of scatterers
+            field_component: Which field component to visualize (default: mp.Ez)
+        """
+        # Create geometry with scatterers
+        geometry = self._create_full_geometry(scatter_positions)
+        
+        # Set up figure with subplots for each input port
+        n_ports = len(self.source_ports)
+        fig, axes = plt.subplots(1, n_ports, figsize=(7*n_ports, 6))
+        if n_ports == 1:  # Handle case with a single input port
+            axes = [axes]
+        
+        for idx, input_port in enumerate(self.source_ports):
+            # Create simulation for this port
+            cell_size = mp.Vector3(self.sx + 2*self.waveguide_length, self.sy + 2*self.metal_thickness)
+            pml_layers = [mp.PML(self.pml_thickness, direction=mp.X)]
+            
+            sources = [mp.EigenModeSource(
+                mp.ContinuousSource(frequency=self.fsrc),
+                center=input_port["position"],
+                size=mp.Vector3(0, self.waveguide_width - self.source_length_diff),
+                eig_band=self.mode_num,
+                eig_parity=self.eig_parity
+            )]
+            
+            sim = mp.Simulation(
+                cell_size=cell_size,
+                boundary_layers=pml_layers,
+                geometry=geometry,
+                sources=sources,
+                resolution=self.resolution,
+                dimensions=2
+            )
+            
+            # Run simulation
+            sim.run(until=self.n_runs)
+            
+            # Set the current axis for plot2D to use
+            plt.sca(axes[idx])
+            
+            # Plot the field using plot2D
+            field_func = lambda x: np.sqrt(np.abs(x))  # Function to enhance visualization
+            sim.plot2D(
+                fields=field_component,
+                field_parameters={
+                    'alpha': 1,
+                    'cmap': 'viridis', 
+                    'interpolation': 'spline36',
+                    'post_process': field_func,
+                    'colorbar': True
+                },
+                boundary_parameters={
+                    'hatch': 'o', 
+                    'linewidth': 1.5, 
+                    'facecolor': 'none', 
+                    'edgecolor': 'k', 
+                    'alpha': 0.3
+                },
+                eps_parameters={
+                    'alpha': 0.8, 
+                    'contour': False
+                }
+            )
+            
+            axes[idx].set_title(f"Input Port: {input_port['name']}")
+            
+            # Clean up before next simulation
+            sim.reset_meep()
+        
+        plt.tight_layout()
+        plt.suptitle("Speckle Patterns for Individual Input Ports", fontsize=16, y=1.05)
+        plt.show()
+        
+        return fig, axes
+
 
     def _create_base_geometry(self):
         """
