@@ -710,7 +710,7 @@ class BilliardBaseEnv(gym.Env):
         
         # Set up figure with subplots for each input port
         n_ports = len(self.source_ports)
-        fig, axes = plt.subplots(1, n_ports, figsize=(7*n_ports, 6))
+        fig, axes = plt.subplots(n_ports, 1, figsize=(8, 6*n_ports))
         if n_ports == 1:  # Handle case with a single input port
             axes = [axes]
         
@@ -743,7 +743,7 @@ class BilliardBaseEnv(gym.Env):
             plt.sca(axes[idx])
             
             # Plot the field using plot2D
-            field_func = lambda x: np.sqrt(np.abs(x))  # Function to enhance visualization
+            field_func = lambda x: (np.abs(x))  # Function to enhance visualization
             sim.plot2D(
                 fields=field_component,
                 field_parameters={
@@ -772,7 +772,7 @@ class BilliardBaseEnv(gym.Env):
             sim.reset_meep()
         
         plt.tight_layout()
-        plt.suptitle("Speckle Patterns for Individual Input Ports", fontsize=16, y=1.05)
+        plt.suptitle("Speckle Patterns for Individual Input Ports", fontsize=16, y=0.98)
         plt.show()
         
         return fig, axes
