@@ -16,6 +16,12 @@ class BilliardThreeEnv(BilliardBaseEnv):
     def __init__(self):
         super().__init__()
 
+        # overwrite system size
+        self.sx = 25
+        self.sy = 25
+        self.waveguide_offset = 9.0 # waveguide center distance to billiard horizontal midline
+        self.epsilon_scatter = 3.9
+
         # Define ports - now with 3 input and 3 output ports (added center ports)
         self.source_ports = [
             {"name": "left_top", "position": mp.Vector3(-self.sx/2-self.source_billiard_distance, self.waveguide_offset), "direction": mp.X},
@@ -176,3 +182,5 @@ if __name__ == "__main__":
     # tm_sample = env._calculate_subSM(env.scatter_pos, matrix_type="RM", visualize=True)
     # print(tm_sample)
     # print(env._calculate_reward(tm_sample))
+
+    # env.plot_speckle_patterns(field_component=mp.Ez)

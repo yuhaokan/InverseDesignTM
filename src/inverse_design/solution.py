@@ -9,7 +9,7 @@ import torch
 # from torch.utils.tensorboard import SummaryWriter
 # import argparse
 
-from envs import BilliardTwoEnv
+from envs import BilliardTwoEnv, BilliardThreeEnv
 
 import os
 # Get the directory where the current script is located
@@ -142,9 +142,7 @@ class SaveBestPosCallback(BaseCallback):
         np.save(os.path.join(self.save_path, 'best_pos_' + env_name + '_' + algo_name + '.npy'), save_dict)
 
 
-def train(env_name, algo_name):
-
-    error_threshold = 0.1
+def train(env_name, algo_name, error_threshold):
 
     # Linear learning rate decay
     lr_schedule = get_linear_fn(start=3e-4, end=1e-5, end_fraction=0.8)
@@ -225,9 +223,12 @@ def train(env_name, algo_name):
 
 
 # Define the environment creation function
-def make_env():
+def make_env(billiard_type):
     def _init():
-        env = BilliardTwoEnv()
+        if billiard_type == 'BilliardThree':
+            env = BilliardThreeEnv()
+        else:
+            env = BilliardTwoEnv()
         env = Monitor(env, log_dir)
         return env
     return _init
@@ -245,8 +246,16 @@ if __name__ == '__main__':
     # sb3_class = getattr(stable_baselines3, args.sb3_algo)
 
 
-    algo_name = "SAC"
-    env_name = "BilliardTwo_Env12_Rank1"
+    algo_name = "PPO"         # SAC  PPO
+    billiard_type = "BilliardThree"   # BilliardThree  BilliardTwo
+    env_type = "Env12"
+    target_type = "Rank1"  # Rank1  Rank1Trace0  FixedRatio
+
+    # BilliardTwo Rank1 -> 0.1
+    # BilliardThree Rank1 -> 0.02
+    error_threshold = 0.02  
+
+    env_name = billiard_type + "_" + env_type + "_" + target_type
 
     ## without parallel computing
     # env = BilliardTwoEnv()
@@ -257,6 +266,6 @@ if __name__ == '__main__':
     ## Create multiple environments in parallel
     # n_envs is the number of parallel environments you want to run
     n_envs = 4  # You can adjust this number based on your CPU cores
-    env = SubprocVecEnv([make_env() for _ in range(n_envs)])
+    env = SubprocVecEnv([make_env(billiard_type) for _ in range(n_envs)])
 
-    train(env_name, algo_name)
+    train(env_name, algo_name, error_threshold)

@@ -13,6 +13,7 @@ class BilliardBaseEnv(gym.Env):
 
         # Common initialization parameters
         self.max_step = 1024   # for each episode, max steps we allowed
+        self.terminated_threshold = 0.01
         self.n_scatterers = 20
 
         # MEEP simulation parameters
@@ -373,7 +374,7 @@ class BilliardBaseEnv(gym.Env):
             self.best_positions = self.scatter_pos.copy()  # Make a copy to prevent reference issues
 
         # Check if goal is achieved or max steps reached
-        terminated = error < 0.01         #  5% deviation for 1.73*t11 vs t21, 5% deviation for 1.73*t12 vs t22, error_threshold = 2 * (5%)^2 = 0.005
+        terminated = error < self.terminated_threshold         #  5% deviation for 1.73*t11 vs t21, 5% deviation for 1.73*t12 vs t22, error_threshold = 2 * (5%)^2 = 0.005
         
         truncated = self.step_count >= self.max_step
 
@@ -696,7 +697,7 @@ class BilliardBaseEnv(gym.Env):
         # Clean up
         sim.reset_meep()
 
-    def plot_speckle_patterns(self, scatter_positions, field_component=mp.Ez):
+    def plot_speckle_patterns(self, scatter_positions=None, field_component=mp.Ez):
         """
         Plot the speckle pattern (field distribution) for each input port excited individually
         using sim.plot2D() for visualization.
@@ -705,6 +706,10 @@ class BilliardBaseEnv(gym.Env):
             scatter_positions: Normalized positions of scatterers
             field_component: Which field component to visualize (default: mp.Ez)
         """
+
+        if scatter_positions is None:
+            scatter_positions = self.scatter_pos
+
         # Create geometry with scatterers
         geometry = self._create_full_geometry(scatter_positions)
         
