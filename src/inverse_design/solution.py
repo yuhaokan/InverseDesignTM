@@ -161,9 +161,11 @@ def train(env_name, algo_name):
         model = PPO('MlpPolicy', env, verbose=1, device='cpu', 
                     learning_rate=lr_schedule,
                     policy_kwargs=policy_kwargs_PPO,  # Larger policy network
-                    n_steps=512,   # The number of steps to run for each environment per update, rollout buffer size is n_steps * n_envs
-                    batch_size=128, 
-                    n_epochs=5,    # Number of epoch the algo will iterate through the entire collected batch of experience during each training update
+                    n_steps=128,    # The number of steps to run for each environment per update, 
+                                    # rollout buffer size is n_steps * n_envs, 
+                                    # n_steps = self.max_step // 8, or even smaller, like self.max_step // 16
+                    batch_size=256, 
+                    n_epochs=8,    # Number of epoch the algo will iterate through the entire collected batch of experience during each training update
                     clip_range=0.2,
                     gamma=0.999, tensorboard_log=log_dir)
 
@@ -183,10 +185,11 @@ def train(env_name, algo_name):
         model = SAC('MlpPolicy', env, verbose=1, device='cpu', 
                 learning_rate=lr_schedule,
                 policy_kwargs=policy_kwargs_SAC,
-                batch_size=128,
-                buffer_size=50000,  # Experience replay buffer size
+                batch_size=256,
+                buffer_size=100000,  # Experience replay buffer size
                 train_freq=4,
-                gradient_steps=4,
+                gradient_steps=8,
+                learning_starts=512,  # Add this to collect enough diverse experiences before learning
                 gamma=0.999,
                 tau=0.005,  # For soft target updates
                 ent_coef='auto',  # Automatic entropy tuning

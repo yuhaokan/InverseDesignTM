@@ -12,7 +12,7 @@ class BilliardBaseEnv(gym.Env):
         super().__init__()
 
         # Common initialization parameters
-        self.max_step = 512   # for each episode, max steps we allowed
+        self.max_step = 1024   # for each episode, max steps we allowed
         self.n_scatterers = 20
 
         # MEEP simulation parameters
@@ -406,7 +406,7 @@ class BilliardBaseEnv(gym.Env):
         # Optionally reset to best known positions with small perturbation
         if self.best_positions is not None and self.np_random.random() < 0.7:
             # 70% chance to use best positions with small Gaussian noise
-            noise = self.np_random.normal(0, 0.05, size=(2*self.n_scatterers,)).astype(np.float32)
+            noise = self.np_random.normal(0, 0.005, size=(2*self.n_scatterers,)).astype(np.float32)
             self.scatter_pos = np.clip(self.best_positions + noise, -1, 1)
         else:
             # 30% chance to generate new random positions
