@@ -10,6 +10,7 @@ print(error)
 
 env = BilliardTwoEnv()
 
+############   Validate Rank-1
 # tm = env._calculate_subSM(pos, matrix_type="TM", visualize=False)
 
 # print(env._calculate_reward(tm))
@@ -21,9 +22,6 @@ env = BilliardTwoEnv()
 # print(np.angle(tm[:,1]/tm[:,0]), np.abs(tm[:,1]/tm[:,0]))
 
 
-# print(env._calculate_normalized_subSM(pos, matrix_type="TM", visualize=False))
-
-
 # env.plot_lowest_transmission_eigenchannel(pos, field_component=mp.Ez)
 
 
@@ -31,9 +29,16 @@ env = BilliardTwoEnv()
 
 # env.plot_phase_map(
 #     scatter_pos=pos,
-#     freq_range=(0.4998, 0.5002),      # 90% to 110% of base frequency
-#     freq_points=21,             # 21 frequency points
-#     loss_range=(-0.000005, 0.000005),   # Loss factors from 0.001 to 0.05
-#     loss_points=21,             # 21 loss factor points
-#     save_path=None   # Save the figure
+#     freq_range=(0.4998, 0.5002),  
+#     freq_points=5,           
+#     loss_range=(-0.000005, 0.000005), 
+#     loss_points=5,            
+#     save_path=None
 # )
+
+
+#############   Validate Rank-1 & Trace-0
+
+normalized_tm = env._calculate_normalized_subSM(pos, matrix_type="TM", visualize=False)
+eigenvalues, elgenvectors = np.linalg.eig(normalized_tm)
+print(eigenvalues)

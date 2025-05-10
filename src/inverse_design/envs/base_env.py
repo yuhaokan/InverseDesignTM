@@ -897,7 +897,7 @@ class BilliardBaseEnv(gym.Env):
         # Plot phase map
         pcm1 = ax1.pcolormesh(
             freqs,
-            losses,
+            -losses,   # put loss in lower half plane
             det_angles,
             cmap='hsv',
             vmin=-np.pi,
@@ -911,7 +911,7 @@ class BilliardBaseEnv(gym.Env):
         # Plot magnitude map (log scale for better visualization)
         pcm2 = ax2.pcolormesh(
             freqs,
-            losses,
+            -losses,    # put loss in lower half plane
             np.log10(det_magnitudes),
             cmap='viridis',
             shading='auto'
@@ -921,15 +921,15 @@ class BilliardBaseEnv(gym.Env):
         cbar2 = fig.colorbar(pcm2, ax=ax2, label='Log10 Magnitude of det(TM)')
 
         # Add labels and titles
-        ax1.set_xlabel(f'Frequency')
-        ax1.set_ylabel('Loss/Gain Factor (negative = gain)')
+        ax1.set_xlabel('Frequency')
+        ax1.set_ylabel('Loss/Gain Factor (negative = loss)')
         ax1.set_title('Phase Map of Determinant')
-        ax1.grid(True, linestyle='--', alpha=0.7)
+        # ax1.grid(True, linestyle='--', alpha=0.7)
 
-        ax2.set_xlabel(f'Frequency')
-        ax2.set_ylabel('Loss/Gain Factor (negative = gain)')
+        ax2.set_xlabel('Frequency')
+        ax2.set_ylabel('Loss/Gain Factor (negative = loss)')
         ax2.set_title('Magnitude Map of Determinant')
-        ax2.grid(True, linestyle='--', alpha=0.7)
+        # ax2.grid(True, linestyle='--', alpha=0.7)
 
         # Add reference line at zero loss for both plots
         # ax1.axhline(y=0, color='red', linestyle='-', alpha=0.7, linewidth=1)
