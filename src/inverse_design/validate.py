@@ -21,7 +21,11 @@ env = BilliardTwoEnv()
 # print(np.angle(tm[:,1]/tm[:,0]), np.abs(tm[:,1]/tm[:,0]))
 
 
+# print(env._calculate_normalized_subSM(pos, matrix_type="TM", visualize=False))
+
+
 # env.plot_lowest_transmission_eigenchannel(pos, field_component=mp.Ez)
+
 
 # env.plot_speckle_patterns(pos, field_component=mp.Ez)
 

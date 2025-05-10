@@ -91,6 +91,8 @@ class BilliardBaseEnv(gym.Env):
         # mp.NO_PARITY
         self.eig_parity = mp.EVEN_Y + mp.ODD_Z                   ####################################################### hyper-parameter 4
 
+        self.field_func = lambda x: (np.abs(x))
+
     def _generate_initial_positions(self, seed=None):
         # Generate and normalize random positions
         # Use self.np_random instead of np.random to ensure proper seeding
@@ -342,9 +344,8 @@ class BilliardBaseEnv(gym.Env):
             
             if visualize:
                 plt.figure()
-                field_func = lambda x: np.sqrt(np.abs(x)) # lambda x: 20*np.log10(np.abs(x))
                 sim.plot2D(fields=field_component,
-                        field_parameters={'alpha':1, 'cmap': 'viridis', 'interpolation':'spline36', 'post_process':field_func, 'colorbar':True},  # 'cmap':'hsv'
+                        field_parameters={'alpha':1, 'cmap': 'viridis', 'interpolation':'spline36', 'post_process':self.field_func, 'colorbar':True},  # 'cmap':'hsv'
                         boundary_parameters={'hatch':'o', 'linewidth':1.5, 'facecolor':'y', 'edgecolor':'b', 'alpha':0.3},
                         eps_parameters={'alpha':0.8, 'contour':False}
                     )
@@ -378,9 +379,8 @@ class BilliardBaseEnv(gym.Env):
             
             if visualize:
                 plt.figure()
-                field_func = lambda x: np.sqrt(np.abs(x)) # lambda x: 20*np.log10(np.abs(x))
                 sim.plot2D(fields=field_component,
-                        field_parameters={'alpha':1, 'cmap':'viridis', 'interpolation':'spline36', 'post_process':field_func, 'colorbar':True},   # 'cmap':'hsv'
+                        field_parameters={'alpha':1, 'cmap':'viridis', 'interpolation':'spline36', 'post_process':self.field_func, 'colorbar':True},   # 'cmap':'hsv'
                         boundary_parameters={'hatch':'o', 'linewidth':1.5, 'facecolor':'y', 'edgecolor':'b', 'alpha':0.3},
                         eps_parameters={'alpha':0.8, 'contour':False}
                     )
@@ -722,11 +722,10 @@ class BilliardBaseEnv(gym.Env):
         plt.figure(figsize=(12, 10))
         
         # Plot field intensity
-        field_func = lambda x: np.sqrt(np.abs(x))  # Field intensity visualization
         sim.plot2D(fields=field_component,
                 field_parameters={'alpha': 1, 'cmap': 'viridis', 
                                 'interpolation': 'spline36', 
-                                'post_process': field_func, 
+                                'post_process': self.field_func, 
                                 'colorbar': True},
                 boundary_parameters={'hatch': 'o', 'linewidth': 1.5, 
                                     'facecolor': 'none', 'edgecolor': 'k', 
@@ -792,14 +791,13 @@ class BilliardBaseEnv(gym.Env):
             plt.sca(axes[idx])
             
             # Plot the field using plot2D
-            field_func = lambda x: (np.abs(x))  # Function to enhance visualization
             sim.plot2D(
                 fields=field_component,
                 field_parameters={
                     'alpha': 1,
                     'cmap': 'viridis', 
                     'interpolation': 'spline36',
-                    'post_process': field_func,
+                    'post_process': self.field_func,
                     'colorbar': True
                 },
                 boundary_parameters={
@@ -844,7 +842,6 @@ class BilliardBaseEnv(gym.Env):
         """
 
         # Create frequency and loss arrays
-        base_freq = self.fsrc
         freqs = np.linspace(freq_range[0], freq_range[1], freq_points)
         losses = np.linspace(loss_range[0], loss_range[1], loss_points)
 
