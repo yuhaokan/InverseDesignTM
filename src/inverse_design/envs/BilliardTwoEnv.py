@@ -131,6 +131,7 @@ class BilliardTwoEnv(BilliardBaseEnv):
 
         ## rank-1 & trace-0
         # error = np.abs(tm[0][0] * tm[1][1] - tm[0][1] * tm[1][0]) + np.abs(tm[0][0] + tm[1][1])
+        # error = np.sum(np.abs(np.linalg.eigvals(tm)))
 
         # error = np.mean(np.abs(tm[0] * ratio - tm[1]))
 
