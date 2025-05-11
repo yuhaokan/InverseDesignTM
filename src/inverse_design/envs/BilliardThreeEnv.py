@@ -13,8 +13,8 @@ except ImportError:
 mp.verbosity(0)
 
 class BilliardThreeEnv(BilliardBaseEnv):
-    def __init__(self):
-        super().__init__()
+    def __init__(self, target_type="Rank1"):
+        super().__init__(target_type)
 
         # overwrite system size
         self.sx = 25
@@ -142,25 +142,32 @@ class BilliardThreeEnv(BilliardBaseEnv):
         
         return geometry
         
-    def _calculate_reward(self, tm) -> tuple[np.float32, np.float32]:
+    def _calculate_reward(self, tm, target_type = "Rank1") -> tuple[np.float32, np.float32]:
         """
         Calculate reward based on how close the transmission matrix is to being rank-1.
         For a rank-1 matrix, the singular values beyond the first one should be zero.
         """
-        # Convert the transmission matrix to a numpy array
-        tm_array = np.array(tm)
-        
-        # Calculate the singular values of the matrix
-        singular_values = np.linalg.svd(tm_array, compute_uv=False)
-        
-        # For a perfect rank-1 matrix, all singular values except the first should be zero
-        # So we sum the squares of all singular values after the first one
-        # error = np.sum(singular_values[1:]**2)
-        
-        # Alternatively, we can use the ratio of the first singular value to the sum
-        # This measures how much of the matrix's "energy" is in the first singular value
-        ratio = singular_values[0] / np.sum(singular_values)
-        error = 1 - ratio  # Error is small when ratio is close to 1
+
+        match target_type:
+
+            case "Rank1":
+                # Convert the transmission matrix to a numpy array
+                tm_array = np.array(tm)
+                
+                # Calculate the singular values of the matrix
+                singular_values = np.linalg.svd(tm_array, compute_uv=False)
+                
+                # For a perfect rank-1 matrix, all singular values except the first should be zero
+                # So we sum the squares of all singular values after the first one
+                # error = np.sum(singular_values[1:]**2)
+                
+                # Alternatively, we can use the ratio of the first singular value to the sum
+                # This measures how much of the matrix's "energy" is in the first singular value
+                ratio = singular_values[0] / np.sum(singular_values)
+                error = 1 - ratio  # Error is small when ratio is close to 1
+
+            case _:
+                error = 0
         
         # Reward is negative of error (higher reward for lower error)
         reward = -error

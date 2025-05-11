@@ -226,9 +226,9 @@ def train(env_name, algo_name, error_threshold):
 def make_env(billiard_type):
     def _init():
         if billiard_type == 'BilliardThree':
-            env = BilliardThreeEnv()
+            env = BilliardThreeEnv(target_type)
         else:
-            env = BilliardTwoEnv()
+            env = BilliardTwoEnv(target_type)
         env = Monitor(env, log_dir)
         return env
     return _init
@@ -247,9 +247,9 @@ if __name__ == '__main__':
 
 
     algo_name = "PPO"         # SAC  PPO
-    billiard_type = "BilliardThree"   # BilliardThree  BilliardTwo
+    billiard_type = "BilliardTwo"   # BilliardThree  BilliardTwo
     env_type = "Env12"
-    target_type = "Rank1"  # Rank1  Rank1Trace0  FixedRatio
+    target_type = "DegenerateEigVal"  # Rank1  Rank1Trace0  DegenerateEigVal
 
     # BilliardTwo Rank1 -> 0.1
     # BilliardThree Rank1 -> 0.02

@@ -1,5 +1,6 @@
 import numpy as np
 import meep as mp
+import matplotlib.pyplot as plt
 # from gymnasium.envs.registration import register
 from gymnasium.utils.env_checker import check_env
 # from stable_baselines3.common.vec_env import DummyVecEnv
@@ -21,8 +22,8 @@ mp.verbosity(0)
 
 
 class BilliardTwoEnv(BilliardBaseEnv):
-    def __init__(self):
-        super().__init__()
+    def __init__(self, target_type="Rank1"):
+        super().__init__(target_type)
 
         # Define ports
         self.source_ports = [
@@ -120,46 +121,166 @@ class BilliardTwoEnv(BilliardBaseEnv):
         
         return geometry
        
-    def _calculate_reward(self, tm) -> tuple[np.float32, np.float32]:
+    def _calculate_reward(self, tm, target_type = "Rank1") -> tuple[np.float32, np.float32]:
 
-        ## Target relationship: tm[0] * ratio = tm[1], expect a rank-1 TM
-        # ratio = np.sqrt(2)
-        # error = np.sum((np.abs(tm[0] / tm[1]) * ratio - 1)**2) 
+        match target_type:
+            case "Rank1":
+                # error = np.abs(tm[0][0] * tm[1][1] - tm[0][1] * tm[1][0])
+                singular_values = np.linalg.svd(np.array(tm), compute_uv=False)
+                ratio = singular_values[0] / np.sum(singular_values)
+                error = 1 - ratio
 
-        ## const power splitter
-        # error = np.abs(tm[0][0] * ratio - tm[0][1]) + np.abs(tm[1][0] * ratio - tm[1][1])
+            case "Rank1Trace0":
+                # error = np.abs(tm[0][0] * tm[1][1] - tm[0][1] * tm[1][0]) + np.abs(tm[0][0] + tm[1][1])
+                norm = np.linalg.norm(tm, 'fro')
+                if norm < 1e-10:  # Avoid division by zero
+                    norm = 1.0
+                error = np.sum(np.abs(np.linalg.eigvals(tm))) / norm
 
-        ## rank-1 & trace-0
-        # error = np.abs(tm[0][0] * tm[1][1] - tm[0][1] * tm[1][0]) + np.abs(tm[0][0] + tm[1][1])
+            case "DegenerateEigVal":
+                eigen_values = np.linalg.eigvals(tm)
+                error = np.abs(eigen_values[0] / np.sum(eigen_values) - 0.5) + np.abs(eigen_values[1] / np.sum(eigen_values) - 0.5)
 
-        # norm = np.linalg.norm(tm, 'fro')
-        # if norm < 1e-10:  # Avoid division by zero
-        #     norm = 1.0
-        # error = np.sum(np.abs(np.linalg.eigvals(tm))) / norm
+            case "FixedTarget":
+                targetTM = np.array([[-2.28661274+0.54642883j, -7.33391126-0.31989986j], [4.91357518-2.36528964j,  3.44673878+3.01154595j]])
+                error = np.sum(np.abs(tm - targetTM))
 
-        # error = np.mean(np.abs(tm[0] * ratio - tm[1]))
-
-        ## rank-1
-        # error = np.abs(tm[0][0] * tm[1][1] - tm[0][1] * tm[1][0])
-
-        ## rank-1 (svd)
-        # singular_values = np.linalg.svd(np.array(tm), compute_uv=False)
-        # ratio = singular_values[0] / np.sum(singular_values)
-        # error = 1 - ratio
-
-        ## degenerate eigenvalues
-        eigen_values = np.linalg.eigvals(tm)
-        error = np.abs(eigen_values[0] / np.sum(eigen_values) - 0.5) + np.abs(eigen_values[1] / np.sum(eigen_values) - 0.5)
-
-        ## fixed target TM
-        # targetTM = np.array([[-2.28661274+0.54642883j, -7.33391126-0.31989986j], [4.91357518-2.36528964j,  3.44673878+3.01154595j]])
-        # error = np.sum(np.abs(tm - targetTM))
+            case _:
+                error = 0
 
         # Reward is negative of error (higher reward for lower error)
         reward = -error
         
         return reward, error
         
+    def calculate_eigenvector_coalescence(self, scatter_pos=None, freq_range=(0.45, 0.55), freq_points=21, 
+                                        loss_range=(-0.05, 0.05), loss_points=21, save_path=None):
+        """
+        Calculate and plot eigenvector coalescence |C| as a function of frequency and loss factor.
+        
+        Args:
+            scatter_pos: Position of scatterers (normalized), uses current positions if None
+            freq_range: Tuple of (min_freq, max_freq) around self.fsrc
+            freq_points: Number of frequency points to sample
+            loss_range: Tuple of (min_loss, max_loss) for uniform loss
+            loss_points: Number of loss points to sample
+            save_path: Path to save the figure (if None, display only)
+            
+        Returns:
+            Fig, ax objects of the generated plot and the coalescence data matrix
+        """
+        
+        # Use current scatterer positions if none provided
+        if scatter_pos is None:
+            scatter_pos = self.scatter_pos
+        
+        # Create frequency and loss arrays
+        freqs = np.linspace(freq_range[0], freq_range[1], freq_points)
+        losses = np.linspace(loss_range[0], loss_range[1], loss_points)
+        
+        # Initialize results array for eigenvector coalescence
+        coalescence_data = np.zeros((loss_points, freq_points), dtype=np.float64)
+        
+        # Store original values to restore later
+        original_freq = self.fsrc
+        original_loss = getattr(self, 'uniform_loss_factor', 0)
+        
+        # Add uniform loss factor attribute if not present
+        if not hasattr(self, 'uniform_loss_factor'):
+            self.uniform_loss_factor = 0
+        
+        # Set up progress tracking
+        total_iterations = loss_points * freq_points
+        current_iteration = 0
+        
+        try:
+            # Loop over loss values and frequencies
+            for i, loss in enumerate(losses):
+                self.uniform_loss_factor = loss
+                
+                for j, freq in enumerate(freqs):
+                    # Update frequency
+                    self.fsrc = freq
+                    
+                    # Calculate TM with current settings
+                    tm = self._calculate_subSM(scatter_pos, matrix_type="TM", visualize=False)
+                    
+                    # Calculate eigenvectors through eigendecomposition
+                    eigenvalues, eigenvectors = np.linalg.eig(tm)
+                    
+                    # Normalize eigenvectors
+                    v1 = eigenvectors[:, 0] / np.linalg.norm(eigenvectors[:, 0])
+                    v2 = eigenvectors[:, 1] / np.linalg.norm(eigenvectors[:, 1])
+                    
+                    # Calculate eigenvector coalescence |C| as the absolute value of the inner product
+                    # Following the formula from equation (5) in the paper
+                    coalescence = np.abs(np.dot(v1.conj(), v2))
+                    coalescence_data[i, j] = coalescence
+                    
+                    # Update progress
+                    current_iteration += 1
+                    if current_iteration % 5 == 0 or current_iteration == total_iterations:
+                        print(f"Progress: {current_iteration}/{total_iterations} iterations completed")
+        
+        finally:
+            # Restore original values
+            self.fsrc = original_freq
+            self.uniform_loss_factor = original_loss
+        
+        # Create figure
+        fig, ax = plt.subplots(figsize=(10, 8))
+        
+        # Plot coalescence map
+        pcm = ax.pcolormesh(
+            freqs,
+            -losses,
+            coalescence_data,
+            cmap='hot',  # Similar to heat map in paper
+            vmin=0,
+            vmax=1,
+            shading='auto'
+        )
+        
+        # Add colorbar
+        cbar = fig.colorbar(pcm, ax=ax, label='Eigenvector Coalescence |C|')
+        
+        # Add labels and title
+        ax.set_xlabel('Frequency')
+        ax.set_ylabel('Loss/Gain Factor')
+        ax.set_title('Eigenvector Coalescence |C|')
+        
+        # Identify exceptional points (EPDs) where |C| approaches 1
+        EPD_threshold = 0.98
+        EPD_indices = np.where(coalescence_data > EPD_threshold)
+        
+        # Mark EPD locations with white dots
+        if len(EPD_indices[0]) > 0:
+            EPD_losses = losses[EPD_indices[0]]
+            EPD_freqs = freqs[EPD_indices[1]]
+            ax.scatter(EPD_freqs, EPD_losses, color='white', s=15, marker='o', 
+                    label=f'EPDs (|C| > {EPD_threshold})', alpha=0.8)
+            ax.legend()
+        
+        # Mark orthogonality curves where |C| approaches 0
+        ortho_threshold = 0.01
+        ortho_indices = np.where(coalescence_data < ortho_threshold)
+        
+        if len(ortho_indices[0]) > 0:
+            ortho_losses = losses[ortho_indices[0]]
+            ortho_freqs = freqs[ortho_indices[1]]
+            ax.scatter(ortho_freqs, ortho_losses, color='white', s=5, marker='.', 
+                    alpha=0.8)
+        
+        plt.tight_layout()
+        
+        # Save if path provided
+        if save_path:
+            plt.savefig(save_path, dpi=300, bbox_inches='tight')
+            print(f"Figure saved to {save_path}")
+        
+        plt.show()
+        
+        return fig, ax, coalescence_data
 
 if __name__ == "__main__":
     env = BilliardTwoEnv()

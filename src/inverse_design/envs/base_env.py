@@ -8,8 +8,10 @@ from matplotlib.patches import Rectangle, Circle
 from gymnasium import spaces
 
 class BilliardBaseEnv(gym.Env):
-    def __init__(self):
+    def __init__(self, target_type="Rank1"):
         super().__init__()
+
+        self.target_type = target_type
 
         # Common initialization parameters
         self.max_step = 1024   # for each episode, max steps we allowed
@@ -410,7 +412,7 @@ class BilliardBaseEnv(gym.Env):
         subSM = self._calculate_subSM(self.scatter_pos, matrix_type="TM", visualize=False)
         
         # Calculate reward and error
-        reward, error = self._calculate_reward(subSM)
+        reward, error = self._calculate_reward(tm=subSM, target_type=self.target_type)
         
         # Update best positions if current error is lower than best error
         if error < self.best_error:
@@ -957,7 +959,7 @@ class BilliardBaseEnv(gym.Env):
         """
         raise NotImplementedError("Subclasses must implement _create_base_geometry")
     
-    def _calculate_reward(self, tm):
+    def _calculate_reward(self, tm, target_type):
         """
         Calculate reward based on the transmission matrix.
         Child classes should implement this method.
