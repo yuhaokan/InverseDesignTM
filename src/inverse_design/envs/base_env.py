@@ -670,6 +670,8 @@ class BilliardBaseEnv(gym.Env):
         # Calculate the transmission matrix
         tm = self._calculate_normalized_subSM(scatter_positions, matrix_type="TM")
         
+        tm = tm.T   # convert to standard notation
+
         # Perform SVD on the transmission matrix
         U, S, Vh = np.linalg.svd(tm)
         
