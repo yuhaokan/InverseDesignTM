@@ -136,16 +136,20 @@ class BilliardTwoEnv(BilliardBaseEnv):
         # error = np.mean(np.abs(tm[0] * ratio - tm[1]))
 
         ## rank-1
-        error = np.abs(tm[0][0] * tm[1][1] - tm[0][1] * tm[1][0])
+        # error = np.abs(tm[0][0] * tm[1][1] - tm[0][1] * tm[1][0])
+
+        ## rank-1 (svd)
+        # singular_values = np.linalg.svd(np.array(tm), compute_uv=False)
+        # ratio = singular_values[0] / np.sum(singular_values)
+        # error = 1 - ratio
+
+        ## degenerate eigenvalues
+        eigen_values = np.linalg.eigvals(tm)
+        error = np.abs(eigen_values[0] / np.sum(eigen_values) - 0.5) + np.abs(eigen_values[1] / np.sum(eigen_values) - 0.5)
 
         ## fixed target TM
         # targetTM = np.array([[-2.28661274+0.54642883j, -7.33391126-0.31989986j], [4.91357518-2.36528964j,  3.44673878+3.01154595j]])
         # error = np.sum(np.abs(tm - targetTM))
-        
-        ## use svd to estimate rank-1
-        # singular_values = np.linalg.svd(np.array(tm), compute_uv=False)
-        # ratio = singular_values[0] / np.sum(singular_values)
-        # error = 1 - ratio
 
         # Reward is negative of error (higher reward for lower error)
         reward = -error
