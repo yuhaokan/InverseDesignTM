@@ -464,18 +464,6 @@ class BilliardBaseEnv(gym.Env):
 
         # Return both observation and info dict
         return self.scatter_pos, {}
-    
-    def get_state(self) -> dict[str, typing.Any]:
-        """Get the current state of the environment."""
-        return {
-            'scatter_pos': self.scatter_pos.copy(),
-            'step_count': self.step_count,
-        }
-
-    def set_state(self, state: dict[str, typing.Any]) -> None:
-        """Set the current state of the environment."""
-        self.scatter_pos = state['scatter_pos'].copy()
-        self.step_count = state['step_count']
 
     def plot_field_intensity(self, sim, component=mp.Ez):
         output_plane=mp.Volume(center=mp.Vector3(), 
@@ -483,20 +471,11 @@ class BilliardBaseEnv(gym.Env):
         
         # Get the field data
         field_data = sim.get_array(center=output_plane.center, size=output_plane.size, component=component)
-        print(np.shape(field_data))
-        # Calculate intensity (|E|²)
         intensity = np.abs(field_data)**2
     
-        # Plot the intensity
         plt.figure()
-        # plt.imshow(intensity.transpose(), interpolation='spline36', cmap='magma') 
         plt.imshow(intensity.transpose())
         plt.colorbar(label='Intensity')
-        plt.title(f'{component} Intensity')
-        # plt.xlabel('x')
-        # plt.ylabel('y')
-        # plt.tight_layout()
-        # plt.savefig(f"{component}_intensity.png")
         plt.show()
 
     def plot_field_cross_section(self, sim, start_point, end_point, component=mp.Ex,
@@ -549,73 +528,6 @@ class BilliardBaseEnv(gym.Env):
         plt.title(f'{component} Field Along Cross-Section')
         plt.grid(True)
         plt.tight_layout()
-        plt.show()
-        
-    def visualize_selective_power_flow(self, sim):
-        """
-        Visualize power flow with arrows only in areas of significant power flow
-        """
-        # Get field components
-        ex = sim.get_array(component=mp.Ex)
-        ey = sim.get_array(component=mp.Ey)
-        hz = sim.get_array(component=mp.Hz)
-        
-        # For 2D TE mode (Ex, Ey, Hz), Poynting vector components are:
-        sx = ey * np.conj(hz)  # x-component
-        sy = -ex * np.conj(hz) # y-component
-        
-        # Magnitude of power flow
-        power_magnitude = np.sqrt(np.sqrt(np.abs(sx)**2 + np.abs(sy)**2))
-        
-        # Plot power flow magnitude
-        plt.figure()
-        plt.imshow(power_magnitude.transpose(), origin='lower', cmap='viridis')
-        plt.colorbar(label='Power flow magnitude')
-        plt.title('Power Flow Distribution')
-        
-        # Add power flow direction vectors ONLY IN SIGNIFICANT AREAS
-        step = 12  # Spacing between arrows
-        
-        # Create grid
-        x = np.arange(0, ex.shape[0], step)
-        y = np.arange(0, ex.shape[1], step)
-        X, Y = np.meshgrid(x, y)
-        
-        # Get downsampled data
-        sx_ds = sx[::step, ::step]
-        sy_ds = sy[::step, ::step]
-        power_ds = power_magnitude[::step, ::step]
-        
-        # Threshold for significant power flow (adjust as needed)
-        # Find the value at 30% of the max power
-        threshold = 0.3 * np.max(power_magnitude)
-        
-        # Create masks for points to plot
-        mask = power_ds > threshold
-        
-        # Only plot points above threshold
-        X_plot = X[mask.T]
-        Y_plot = Y[mask.T]
-        
-        # Normalize direction vectors 
-        sx_plot = np.real(sx_ds[mask])
-        sy_plot = np.real(sy_ds[mask])
-        norm = np.sqrt(sx_plot**2 + sy_plot**2)
-        sx_plot = sx_plot / (norm + 1e-10)
-        sy_plot = sy_plot / (norm + 1e-10)
-        
-        # Plot selective quiver
-        plt.quiver(X_plot, Y_plot, sx_plot, sy_plot, 
-                scale=15,      
-                pivot='mid',    
-                color='white', 
-                alpha=0.9,
-                width=0.006,
-                headwidth=5,
-                headlength=6)
-        
-        plt.xlabel('x (pixels)')
-        plt.ylabel('y (pixels)')
         plt.show()
 
     def render(self):
@@ -744,6 +656,114 @@ class BilliardBaseEnv(gym.Env):
         # Clean up
         sim.reset_meep()
 
+    def plot_lowest_transmission_eigenchannel_steady_state(self, scatter_positions=None, field_component=mp.Ez):
+        """
+        Plot the steady-state field pattern of the lowest eigenchannel (highest transmission/lowest loss).
+        
+        Args:
+            scatter_positions: Positions of scatterers (uses current positions if None)
+            field_component: Field component to plot (default: mp.Ez)
+            n_modes: Number of modes to compute when finding the lowest eigenchannel
+        """
+        dft_resolution = 1
+
+        if scatter_positions is None:
+            scatter_positions = self.scatter_pos
+        
+        # Create geometry with scatterers
+        geometry = self._create_full_geometry(scatter_positions)
+        
+        # Setup simulation cell
+        cell_size = mp.Vector3(self.sx + 2 * self.waveguide_length, self.sy + 2 * self.metal_thickness)
+        pml_layers = [mp.PML(self.pml_thickness, direction=mp.X)]
+        
+        # First, calculate the full scattering matrix
+        # We need all source ports and output ports to construct the matrix
+        tm = self._calculate_normalized_subSM(scatter_positions, matrix_type="TM", visualize=False)
+        tm = tm.T
+
+        # Perform Singular Value Decomposition (SVD) to find eigenchannels
+
+        U, S, Vh = np.linalg.svd(tm)
+        print(f"Singular values: {S}")
+        
+        min_idx = np.argmin(S)
+        # The highest singular value corresponds to the lowest-loss eigenchannel
+        # The corresponding right singular vector tells us how to excite this channel
+        eigenchannel_weights = Vh[min_idx].conj()  # First row of V† matrix
+            
+        # Normalize the weights
+        eigenchannel_weights = eigenchannel_weights / np.linalg.norm(eigenchannel_weights)
+        
+        # Create a simulation with sources using the eigenchannel weights
+        sources = []
+        for i, input_port in enumerate(self.source_ports):
+            # Create a source with amplitude and phase from eigenchannel weights
+            weight = eigenchannel_weights[i]
+            # amplitude = np.abs(weight)
+            # phase = np.angle(weight)
+            
+            # Create source with proper amplitude and phase
+            source = mp.EigenModeSource(
+                mp.ContinuousSource(frequency=self.fsrc),
+                center=input_port["position"],
+                size=mp.Vector3(0, self.waveguide_width - self.source_length_diff),
+                eig_band=self.mode_num,
+                eig_parity=self.eig_parity,
+                amplitude=weight
+            )
+            sources.append(source)
+        
+        # Create simulation with these weighted sources
+        sim = mp.Simulation(
+            cell_size=cell_size,
+            boundary_layers=pml_layers,
+            geometry=geometry,
+            sources=sources,
+            resolution=self.resolution,
+            dimensions=2
+        )
+        
+        # Add DFT monitor for the entire cell
+        dft = sim.add_dft_fields([field_component], 
+                                self.fsrc, self.fsrc, 1,
+                                center=mp.Vector3(),
+                                size=cell_size,
+                                resolution=dft_resolution)
+        
+        # Run simulation until steady state
+        sim.run(until=self.n_runs)
+        
+        # Get the DFT field data
+        dft_data = sim.get_dft_array(dft, field_component, 0)
+        
+        # Get the grid dimensions for plotting
+        nx, ny = dft_data.shape
+        x = np.linspace(-cell_size.x/2, cell_size.x/2, nx)
+        y = np.linspace(-cell_size.y/2, cell_size.y/2, ny)
+        X, Y = np.meshgrid(x, y, indexing='ij')
+        
+        # Calculate intensity
+        plot_data = np.log(np.abs(dft_data)**2 + 1e-6)
+        
+        # Create figure and plot
+        plt.figure(figsize=(12, 10))
+        
+        # Plot intensity
+        plt.imshow(plot_data.T, 
+                origin='lower', 
+                extent=[-cell_size.x/2, cell_size.x/2, -cell_size.y/2, cell_size.y/2],
+                cmap='viridis', 
+                interpolation='bilinear')
+
+        plt.colorbar(label='Log Intensity log(|E|²)')
+        plt.tight_layout()
+        plt.show()
+
+        # Clean up
+        sim.reset_meep()
+
+    
     def plot_speckle_patterns(self, scatter_positions=None, field_component=mp.Ez):
         """
         Plot the speckle pattern (field distribution) for each input port excited individually
@@ -828,6 +848,92 @@ class BilliardBaseEnv(gym.Env):
         
         return fig, axes
 
+    def plot_speckle_patterns_steady_state(self, scatter_positions=None, field_component=mp.Ez, input_port_index=0):
+
+        dft_resolution = 1
+
+        """Plot steady-state fields at a single frequency using MEEP's output_dft"""
+        if scatter_positions is None:
+            scatter_positions = self.scatter_pos
+        
+        # Create geometry with scatterers
+        geometry = self._create_full_geometry(scatter_positions)
+        
+        # Get the input port
+        input_port = self.source_ports[input_port_index]
+        
+        # Setup simulation
+        cell_size = mp.Vector3(self.sx + 2 * self.waveguide_length, self.sy + 2 * self.metal_thickness)
+        pml_layers = [mp.PML(self.pml_thickness, direction=mp.X)]
+        
+        sources = [mp.EigenModeSource(
+            mp.ContinuousSource(frequency=self.fsrc),
+            center=input_port["position"],
+            size=mp.Vector3(0, self.waveguide_width - self.source_length_diff),
+            eig_band=self.mode_num,
+            eig_parity=self.eig_parity
+        )]
+        
+        sim = mp.Simulation(
+            cell_size=cell_size,
+            boundary_layers=pml_layers,
+            geometry=geometry,
+            sources=sources,
+            resolution=self.resolution,
+            dimensions=2
+        )
+        
+        # Add DFT monitor for the entire cell
+        dft = sim.add_dft_fields([field_component], 
+                                self.fsrc, self.fsrc, 1,
+                                center=mp.Vector3(),
+                                size=cell_size,
+                                resolution=dft_resolution)
+        
+        # Run simulation until steady state
+        sim.run(until=self.n_runs)
+        
+        # Create a new figure
+        plt.figure(figsize=(10, 8))
+        
+        # Use output_dft to visualize DFT fields
+        # This function directly generates a plot from DFT data
+        # sim.output_dft(dft, field_component, function=self.field_func)
+
+        dft_data = sim.get_dft_array(dft, field_component, 0)
+
+        # Get the grid dimensions for the DFT data
+        nx, ny = dft_data.shape
+        x = np.linspace(-cell_size.x/2, cell_size.x/2, nx)
+        y = np.linspace(-cell_size.y/2, cell_size.y/2, ny)
+        X, Y = np.meshgrid(x, y, indexing='ij')
+        
+        # Get the dielectric structure for overlay (can use lower resolution too)
+        eps_data = sim.get_epsilon()
+        
+
+        # Plot intensity (magnitude squared)
+        plot_data = np.log(np.abs(dft_data)**2 + 1e-6)
+        
+        plt.imshow(plot_data.T, 
+                   origin='lower', 
+                   extent=[-cell_size.x/2, cell_size.x/2, -cell_size.y/2, cell_size.y/2],
+                   cmap='viridis', 
+                   vmin=0, 
+                   interpolation='bilinear')
+        
+        
+        # Add colorbar and labels
+        plt.colorbar(label='Intensity')
+        plt.tight_layout()
+        
+
+        plt.show()
+
+        sim.reset_meep()
+        
+        return plot_data
+        
     def plot_phase_map(self, scatter_pos, freq_range=(0.45, 0.55), freq_points=3,
                        loss_range=(-0.05, 0.05), loss_points=3, save_path=None):
         """
@@ -965,3 +1071,15 @@ class BilliardBaseEnv(gym.Env):
         Child classes should implement this method.
         """
         raise NotImplementedError("Subclasses must implement _calculate_reward")
+    
+    def get_state(self) -> dict[str, typing.Any]:
+        """Get the current state of the environment."""
+        return {
+            'scatter_pos': self.scatter_pos.copy(),
+            'step_count': self.step_count,
+        }
+
+    def set_state(self, state: dict[str, typing.Any]) -> None:
+        """Set the current state of the environment."""
+        self.scatter_pos = state['scatter_pos'].copy()
+        self.step_count = state['step_count']

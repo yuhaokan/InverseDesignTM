@@ -79,30 +79,6 @@ class TensorboardStepCallbackV2(BaseCallback):
             
         return True
 
-class TensorboardStepCallback(BaseCallback):
-    def __init__(self, verbose=0):
-        super().__init__(verbose)
-
-    def _on_step(self) -> bool:
-        # Log losses and metrics at each step
-        loss_dict = self.model.logger.name_to_value
-       
-        for key, value in loss_dict.items():
-            self.logger.record(key, value)
-           
-        # Get the most recent reward from the environment
-        # The reward from the last step is stored in self.locals
-        step_rewards = self.locals['rewards']  # This is now an array with values from all environments
-
-        # Log the mean & max step reward using logger.record
-        self.logger.record("rewards/step_reward_mean", np.mean(step_rewards))
-        self.logger.record("rewards/step_reward_max", np.max(step_rewards))
-
-        # Make sure to dump the logs
-        self.logger.dump(self.num_timesteps)
-
-        return True
-
 class SaveBestPosCallback(BaseCallback):
     def __init__(self, error_threshold=0.5, save_freq=100, save_path=position_dir, verbose=0):
         super().__init__(verbose)
