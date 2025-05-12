@@ -4,9 +4,9 @@ import numpy as np
 import meep as mp
 
 # best_pos_BilliardTwo_Env12_Rank1_PPO
-pos, error = load_best_pos(best_pos_file_name = 'best_pos_BilliardTwo_Env12_DegenerateEigVal_PPO_1.npy')
+pos, error = load_best_pos(best_pos_file_name = 'best_pos_BilliardTwo_Env12_Rank1_PPO_2.npy')
 
-print(error)
+# print(error)
 
 env = BilliardTwoEnv()
 
@@ -17,13 +17,21 @@ env = BilliardTwoEnv()
 
 # print(tm)
 
-# print(tm[:,1]/tm[:,0])
+tm = normalized_tm = env._calculate_normalized_subSM(pos, matrix_type="TM", visualize=False)
 
-# print(np.angle(tm[:,1]/tm[:,0]), np.abs(tm[:,1]/tm[:,0]))
+_, s, _ = np.linalg.svd(tm)
 
+print(s)
+print(np.angle(tm[:,1]/tm[:,0]), np.abs(tm[:,1]/tm[:,0]))
+
+
+env.plot_speckle_patterns_steady_state(pos, field_component=mp.Ez, input_port_index=0)
+
+env.plot_speckle_patterns_steady_state(pos, field_component=mp.Ez, input_port_index=1)
+
+env.plot_lowest_transmission_eigenchannel_steady_state(pos, field_component=mp.Ez)
 
 # env.plot_lowest_transmission_eigenchannel(pos, field_component=mp.Ez)
-
 
 # env.plot_speckle_patterns(pos, field_component=mp.Ez)
 

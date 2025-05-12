@@ -744,7 +744,7 @@ class BilliardBaseEnv(gym.Env):
         X, Y = np.meshgrid(x, y, indexing='ij')
         
         # Calculate intensity
-        plot_data = np.log(np.abs(dft_data)**2 + 1e-6)
+        plot_data = self.field_func(dft_data)
         
         # Create figure and plot
         plt.figure(figsize=(12, 10))
@@ -895,10 +895,7 @@ class BilliardBaseEnv(gym.Env):
         
         # Create a new figure
         plt.figure(figsize=(10, 8))
-        
-        # Use output_dft to visualize DFT fields
-        # This function directly generates a plot from DFT data
-        # sim.output_dft(dft, field_component, function=self.field_func)
+    
 
         dft_data = sim.get_dft_array(dft, field_component, 0)
 
@@ -913,7 +910,7 @@ class BilliardBaseEnv(gym.Env):
         
 
         # Plot intensity (magnitude squared)
-        plot_data = np.log(np.abs(dft_data)**2 + 1e-6)
+        plot_data = self.field_func(dft_data) # np.log(np.abs(dft_data)**2 + 1e-6)
         
         plt.imshow(plot_data.T, 
                    origin='lower', 
