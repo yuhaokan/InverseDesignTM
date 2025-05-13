@@ -138,8 +138,11 @@ class BilliardTwoEnv(BilliardBaseEnv):
                 error = np.sum(np.abs(np.linalg.eigvals(tm))) / norm
 
             case "DegenerateEigVal":
-                eigen_values = np.linalg.eigvals(tm)
-                error = np.abs(eigen_values[0] / np.sum(eigen_values) - 0.5) + np.abs(eigen_values[1] / np.sum(eigen_values) - 0.5)
+                # eigen_values = np.linalg.eigvals(tm)
+                # error = np.abs(eigen_values[0] / np.sum(eigen_values) - 0.5) + np.abs(eigen_values[1] / np.sum(eigen_values) - 0.5)
+
+                discriminant = (tm[0][0] - tm[1][1]) ** 2 + 4 * tm[0][1] * tm[1][0]
+                error = np.abs(discriminant) / (np.linalg.norm(tm, 'fro') ** 2 + 1e-8) # Calculate Frobenius norm for scaling, return normalized discriminant
 
             case "FixedTarget":
                 targetTM = np.array([[-2.28661274+0.54642883j, -7.33391126-0.31989986j], [4.91357518-2.36528964j,  3.44673878+3.01154595j]])
