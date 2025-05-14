@@ -131,11 +131,12 @@ class BilliardTwoEnv(BilliardBaseEnv):
                 error = 1 - ratio
 
             case "Rank1Trace0":
-                # error = np.abs(tm[0][0] * tm[1][1] - tm[0][1] * tm[1][0]) + np.abs(tm[0][0] + tm[1][1])
-                norm = np.linalg.norm(tm, 'fro')
-                if norm < 1e-10:  # Avoid division by zero
-                    norm = 1.0
-                error = np.sum(np.abs(np.linalg.eigvals(tm))) / norm
+                # norm = np.linalg.norm(tm, 'fro')
+                # if norm < 1e-10:  # Avoid division by zero
+                #     norm = 1.0
+                # error = np.sum(np.abs(np.linalg.eigvals(tm))) / norm
+
+                error = (np.abs(tm[0][0] * tm[1][1] - tm[0][1] * tm[1][0]) + np.abs(tm[0][0] + tm[1][1]) ** 2) / (np.linalg.norm(tm, 'fro')**2 + 1e-8)
 
             case "DegenerateEigVal":
                 # eigen_values = np.linalg.eigvals(tm)
