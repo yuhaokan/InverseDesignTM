@@ -149,6 +149,10 @@ class BilliardTwoEnv(BilliardBaseEnv):
                 targetTM = np.array([[-2.28661274+0.54642883j, -7.33391126-0.31989986j], [4.91357518-2.36528964j,  3.44673878+3.01154595j]])
                 error = np.sum(np.abs(tm - targetTM))
 
+            case "DegenerateSingularVal":
+                singular_values = np.linalg.svd(tm, full_matrices=False, compute_uv=False)
+                error = np.abs(singular_values[0] - singular_values[1])
+
             case _:
                 error = 0
 
