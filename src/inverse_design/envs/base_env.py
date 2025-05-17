@@ -998,6 +998,11 @@ class BilliardBaseEnv(gym.Env):
             self.fsrc = original_freq
             self.uniform_loss_factor = original_loss
 
+            
+        # Save if path provided
+        if save_path:
+            np.savez(save_path + 'phase_map.npz', freqs=freqs, losses=losses, det=det)
+
         # Create figure with two subplots - phase and magnitude
         fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(16, 8))
 
@@ -1047,11 +1052,6 @@ class BilliardBaseEnv(gym.Env):
         plt.tight_layout()
 
         plt.show()
-
-        # Save if path provided
-        if save_path:
-            plt.savefig(save_path, dpi=300, bbox_inches='tight')
-            print(f"Figure saved to {save_path}")
 
         return fig, (ax1, ax2)
     

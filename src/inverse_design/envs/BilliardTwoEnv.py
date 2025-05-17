@@ -231,6 +231,9 @@ class BilliardTwoEnv(BilliardBaseEnv):
             self.fsrc = original_freq
             self.uniform_loss_factor = original_loss
         
+        if save_path:
+            np.savez(save_path + 'coalescence_data.npz', freqs=freqs, losses=losses, coalescence_data=coalescence_data)
+
         # Create figure
         fig, ax = plt.subplots(figsize=(10, 8))
         
@@ -277,11 +280,132 @@ class BilliardTwoEnv(BilliardBaseEnv):
         
         plt.tight_layout()
         
+        plt.show()
+        
+        return fig, ax, coalescence_data
+
+
+    def calculate_eigenvector_coalescence_position_sweep(self, scatter_pos=None, scatter_idx=0,
+                                                        position_range=(-0.1, 0.1), position_points=21,
+                                                        freq_range=(0.45, 0.55), freq_points=21,
+                                                        direction='x', save_path=None):
+        """
+        Calculate and plot eigenvector coalescence |C| as a function of frequency and
+        perturbation of a single scatterer's position.
+
+        Args:
+            scatter_pos: Base position of scatterers (normalized), uses current positions if None
+            scatter_idx: Index of the scatterer to perturb (0 to n_scatterers-1)
+            position_range: Tuple of (min_delta, max_delta) for position perturbation
+            position_points: Number of position perturbation points to sample
+            freq_range: Tuple of (min_freq, max_freq) around self.fsrc
+            freq_points: Number of frequency points to sample
+            direction: Direction to perturb the scatterer ('x' or 'y')
+            save_path: Path to save the figure (if None, display only)
+
+        Returns:
+            Fig, ax objects of the generated plot and the coalescence data matrix
+        """
+
+        # Use current scatterer positions if none provided
+        if scatter_pos is None:
+            scatter_pos = self.scatter_pos.copy()
+        else:
+            scatter_pos = np.array(scatter_pos).copy()
+
+        # Create frequency and position delta arrays
+        freqs = np.linspace(freq_range[0], freq_range[1], freq_points)
+        position_deltas = np.linspace(position_range[0], position_range[1], position_points)
+
+        # Determine the actual index in the scatter_pos array based on direction
+        if direction.lower() == 'x':
+            pos_idx = scatter_idx * 2  # x-coordinate
+        elif direction.lower() == 'y':
+            pos_idx = scatter_idx * 2 + 1  # y-coordinate
+        else:
+            raise ValueError("Direction must be 'x' or 'y'")
+
+        # Initialize results array for eigenvector coalescence
+        coalescence_data = np.zeros((position_points, freq_points), dtype=np.float64)
+
+        # Store original values to restore later
+        original_freq = self.fsrc
+        original_pos = scatter_pos[pos_idx]
+
+        # Make sure we're not using any loss/gain
+        original_loss = getattr(self, 'uniform_loss_factor', 0)
+        self.uniform_loss_factor = 0
+
+        # Set up progress tracking
+        total_iterations = position_points * freq_points
+        current_iteration = 0
+
+        try:
+            # Loop over position perturbations and frequencies
+            for i, delta in enumerate(position_deltas):
+                # Update position
+                scatter_pos[pos_idx] = original_pos + delta
+
+                # Make sure the perturbed position stays within bounds [-1, 1]
+                scatter_pos[pos_idx] = np.clip(scatter_pos[pos_idx], -1, 1)
+
+                for j, freq in enumerate(freqs):
+                    # Update frequency
+                    self.fsrc = freq
+
+                    # Calculate TM with current settings
+                    tm = self._calculate_subSM(scatter_pos, matrix_type="TM", visualize=False)
+
+                    # Calculate eigenvectors through eigendecomposition
+                    eigenvalues, eigenvectors = np.linalg.eig(tm)
+
+                    # Normalize eigenvectors
+                    v1 = eigenvectors[:, 0] / np.linalg.norm(eigenvectors[:, 0])
+                    v2 = eigenvectors[:, 1] / np.linalg.norm(eigenvectors[:, 1])
+
+                    # Calculate eigenvector coalescence |C|
+                    coalescence = np.abs(np.dot(v1.conj(), v2))
+                    coalescence_data[i, j] = coalescence
+
+                    # Update progress
+                    current_iteration += 1
+                    if current_iteration % 5 == 0 or current_iteration == total_iterations:
+                        print(f"Progress: {current_iteration}/{total_iterations} iterations completed")
+
+        finally:
+            # Restore original values
+            self.fsrc = original_freq
+            scatter_pos[pos_idx] = original_pos
+            self.uniform_loss_factor = original_loss
+
         # Save if path provided
         if save_path:
-            plt.savefig(save_path, dpi=300, bbox_inches='tight')
-            print(f"Figure saved to {save_path}")
-        
+            np.savez(save_path + 'coalescence_data.npz', freqs=freqs, position_deltas=position_deltas, coalescence_data=coalescence_data)
+
+        # Create figure
+        fig, ax = plt.subplots(figsize=(10, 8))
+
+        # Plot coalescence map
+        pcm = ax.pcolormesh(
+            freqs,
+            position_deltas,
+            coalescence_data,
+            cmap='hot',  # Similar to heat map in paper
+            vmin=0,
+            vmax=1,
+            shading='auto'
+        )
+
+        # Add colorbar
+        cbar = fig.colorbar(pcm, ax=ax, label='Eigenvector Coalescence |C|')
+
+        # Add labels and title
+        ax.set_xlabel('Frequency')
+        ax.set_ylabel(f'Scatterer {scatter_idx} {direction.upper()}-Position Perturbation')
+        ax.set_title(f'Eigenvector Coalescence vs Frequency and {direction.upper()}-Position')
+
+        plt.tight_layout()
+
         plt.show()
         
         return fig, ax, coalescence_data
