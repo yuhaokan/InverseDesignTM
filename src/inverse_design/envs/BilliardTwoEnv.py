@@ -151,7 +151,7 @@ class BilliardTwoEnv(BilliardBaseEnv):
 
             case "DegenerateSingularVal":
                 singular_values = np.linalg.svd(tm, full_matrices=False, compute_uv=False)
-                error = np.abs(singular_values[0] - singular_values[1])
+                error = np.abs(singular_values[0] - singular_values[1]) / (np.linalg.norm(tm, 'fro') + 1e-8)
 
             case _:
                 error = 0
