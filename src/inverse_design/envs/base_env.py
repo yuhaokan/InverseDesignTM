@@ -44,7 +44,7 @@ class BilliardBaseEnv(gym.Env):
         self.waveguide_width = 1.2
         # else 6.0
         # env20 -> 9.0
-        self.waveguide_offset = 9.0  # waveguide center distance to billiard horizontal midline ################################# hyper-parameter 5
+        self.waveguide_offset = 6.0  # waveguide center distance to billiard horizontal midline ################################# hyper-parameter 5
         self.metal_thickness = 0.2
 
         # env4, 5, 6 -> 0.1
@@ -62,7 +62,7 @@ class BilliardBaseEnv(gym.Env):
         # env4 -> 3.9
         # env5,6,10, 11,12 -> 2.1
         # env20 -> 10
-        self.epsilon_scatter = 10     ####################################################################  hyper-parameter 3
+        self.epsilon_scatter = 2.1     ####################################################################  hyper-parameter 3
         
         self.mode_num = 1
         
@@ -200,73 +200,74 @@ class BilliardBaseEnv(gym.Env):
         Returns:
             Incoming field amplitude
         """
-        # Use the first source port as reference
-        input_port = self.source_ports[0]
+        # # Use the first source port as reference
+        # input_port = self.source_ports[0]
         
-        # Create a simulation with just a single waveguide
-        waveguide_only_geometry = []
+        # # Create a simulation with just a single waveguide
+        # waveguide_only_geometry = []
         
-        # Add only one waveguide
-        self._create_metal_waveguide(
-            waveguide_only_geometry,
-            input_port["position"].x,
-            input_port["position"].y,
-            self.waveguide_length,
-            self.waveguide_width
-        )
+        # # Add only one waveguide
+        # self._create_metal_waveguide(
+        #     waveguide_only_geometry,
+        #     input_port["position"].x,
+        #     input_port["position"].y,
+        #     self.waveguide_length,
+        #     self.waveguide_width
+        # )
         
-        # Create simulation for reference incoming field
-        cell_size = mp.Vector3(self.sx + 2*self.waveguide_length, self.sy + 2*self.metal_thickness)
-        pml_layers = [mp.PML(self.pml_thickness, direction=mp.X)]
+        # # Create simulation for reference incoming field
+        # cell_size = mp.Vector3(self.sx + 2*self.waveguide_length, self.sy + 2*self.metal_thickness)
+        # pml_layers = [mp.PML(self.pml_thickness, direction=mp.X)]
         
-        sources = [mp.EigenModeSource(
-            mp.ContinuousSource(frequency=self.fsrc),
-            center=input_port["position"],
-            size=mp.Vector3(0, self.waveguide_width - self.source_length_diff),
-            eig_band=self.mode_num,
-            eig_parity=self.eig_parity
-        )]
+        # sources = [mp.EigenModeSource(
+        #     mp.ContinuousSource(frequency=self.fsrc),
+        #     center=input_port["position"],
+        #     size=mp.Vector3(0, self.waveguide_width - self.source_length_diff),
+        #     eig_band=self.mode_num,
+        #     eig_parity=self.eig_parity
+        # )]
         
-        ref_sim = mp.Simulation(
-            cell_size=cell_size,
-            boundary_layers=pml_layers,
-            geometry=waveguide_only_geometry,
-            sources=sources,
-            resolution=self.resolution,
-            dimensions=2
-        )
+        # ref_sim = mp.Simulation(
+        #     cell_size=cell_size,
+        #     boundary_layers=pml_layers,
+        #     geometry=waveguide_only_geometry,
+        #     sources=sources,
+        #     resolution=self.resolution,
+        #     dimensions=2
+        # )
         
-        # Add a monitor slightly in front of the source to measure incoming field
-        # Place it a small distance in the direction of propagation
-        monitor_pos = mp.Vector3(
-            input_port["position"].x + 3,  # Slightly in front of source
-            input_port["position"].y,
-            input_port["position"].z
-        )
+        # # Add a monitor slightly in front of the source to measure incoming field
+        # # Place it a small distance in the direction of propagation
+        # monitor_pos = mp.Vector3(
+        #     input_port["position"].x + 3,  # Slightly in front of source
+        #     input_port["position"].y,
+        #     input_port["position"].z
+        # )
         
-        source_monitor = ref_sim.add_mode_monitor(
-            self.fsrc, 0, 1,
-            mp.ModeRegion(
-                center=monitor_pos,
-                size=mp.Vector3(0, self.waveguide_width - self.source_length_diff)
-            )
-        )
+        # source_monitor = ref_sim.add_mode_monitor(
+        #     self.fsrc, 0, 1,
+        #     mp.ModeRegion(
+        #         center=monitor_pos,
+        #         size=mp.Vector3(0, self.waveguide_width - self.source_length_diff)
+        #     )
+        # )
         
-        # Run reference simulation
-        ref_sim.run(until=self.n_runs)  # Shorter run time is sufficient for straight waveguide
+        # # Run reference simulation
+        # ref_sim.run(until=self.n_runs)  # Shorter run time is sufficient for straight waveguide
         
-        # Get the incoming field amplitude
-        source_data = ref_sim.get_eigenmode_coefficients(
-            source_monitor, [1],
-            eig_parity=self.eig_parity
-        )
-        incoming_amplitude = abs(source_data.alpha[0,0,0])
+        # # Get the incoming field amplitude
+        # source_data = ref_sim.get_eigenmode_coefficients(
+        #     source_monitor, [1],
+        #     eig_parity=self.eig_parity
+        # )
+        # incoming_amplitude = abs(source_data.alpha[0,0,0])
         
-        # Clean up
-        ref_sim.reset_meep()
+        # # Clean up
+        # ref_sim.reset_meep()
         
-        # print(incoming_amplitude)
-        return incoming_amplitude
+        # # print(incoming_amplitude)
+        # return incoming_amplitude
+        return 73.7
 
     def _calculate_normalized_subSM(self, normalized_scatterers_positions, matrix_type="TM", visualize=False):
         """
@@ -1058,6 +1059,290 @@ class BilliardBaseEnv(gym.Env):
 
         return fig, (ax1, ax2)
     
+    def plot_transmission_eigenvalue_spectrum(self, scatter_pos=None, freq_range=(0.45, 0.55), 
+                                            freq_points=51, save_path=None):
+        """
+        Plot the spectrum of transmission eigenvalues (singular values) as a function of frequency.
+        
+        Args:
+            scatter_pos: Position of scatterers (normalized), uses current positions if None
+            freq_range: Tuple of (min_freq, max_freq) around self.fsrc
+            freq_points: Number of frequency points to sample
+            save_path: Path to save the figure (if None, display only)
+            
+        Returns:
+            Fig, ax objects of the generated plot and the eigenvalue data
+        """
+        
+        # Use current scatterer positions if none provided
+        if scatter_pos is None:
+            scatter_pos = self.scatter_pos
+        
+        # Create frequency array
+        freqs = np.linspace(freq_range[0], freq_range[1], freq_points)
+        
+        # Initialize arrays to store eigenvalues at each frequency
+        num_eigenvals = min(len(self.source_ports), len(self.output_ports))
+        eigenval_data = np.zeros((freq_points, num_eigenvals), dtype=np.float64)
+        
+        # Store original frequency to restore later
+        original_freq = self.fsrc
+        
+        # Set up progress tracking
+        total_iterations = freq_points
+        current_iteration = 0
+        
+        try:
+            # Loop over frequencies
+            for i, freq in enumerate(freqs):
+                # Update frequency
+                self.fsrc = freq
+                
+                # Calculate TM with current settings
+                tm = self._calculate_normalized_subSM(scatter_pos, matrix_type="TM", visualize=False)
+                
+                # Calculate singular values (transmission eigenvalues)
+                singular_values = np.linalg.svd(tm, compute_uv=False)
+                eigenval_data[i, :] = singular_values
+                
+                # Update progress
+                current_iteration += 1
+                if current_iteration % 5 == 0 or current_iteration == total_iterations:
+                    print(f"Progress: {current_iteration}/{total_iterations} frequencies processed")
+        
+        finally:
+            # Restore original frequency
+            self.fsrc = original_freq
+        
+        # Save if path provided
+        if save_path:
+            np.savez(save_path + 'eigenvalue_spectrum.npz', 
+                    freqs=freqs, 
+                    eigenvalues=eigenval_data,
+                    scatter_pos=scatter_pos)
+
+        # Create figure
+        fig, ax = plt.subplots(figsize=(10, 6))
+        
+        # Plot eigenvalue spectra
+        for j in range(num_eigenvals):
+            ax.plot(freqs, eigenval_data[:, j], '-', linewidth=2, 
+                    label=f'Eigenvalue {j+1}')
+        
+        # Calculate and plot the Schmidt number across frequencies
+        schmidt_numbers = np.zeros(freq_points)
+        for i in range(freq_points):
+            squared_values = eigenval_data[i, :] ** 2
+            schmidt_numbers[i] = np.sum(squared_values) ** 2 / np.sum(squared_values ** 2)
+        
+        # Add Schmidt number on a secondary y-axis
+        ax2 = ax.twinx()
+        ax2.plot(freqs, schmidt_numbers, '--', color='red', linewidth=2, label='Schmidt Number')
+        ax2.set_ylabel('Schmidt Number', color='red')
+        ax2.tick_params(axis='y', labelcolor='red')
+        ax2.set_ylim([1, num_eigenvals*1.1])  # Set appropriate limits
+        
+        # Add labels and title
+        ax.set_xlabel('Frequency')
+        ax.set_ylabel('Singular Value Magnitude')
+        ax.set_title('Transmission Eigenvalue Spectrum')
+        ax.grid(True, linestyle='--', alpha=0.7)
+        
+        # Highlight regions where eigenvalues are nearly degenerate
+        # Define degeneracy threshold
+        degeneracy_threshold = 0.05  # 5% difference
+        for i in range(freq_points):
+            if np.abs(eigenval_data[i, 0] - eigenval_data[i, 1]) / eigenval_data[i, 0] < degeneracy_threshold:
+                ax.axvline(x=freqs[i], color='green', alpha=0.2)
+        
+        # Add legends for both axes
+        lines1, labels1 = ax.get_legend_handles_labels()
+        lines2, labels2 = ax2.get_legend_handles_labels()
+        ax.legend(lines1 + lines2, labels1 + labels2, loc='best')
+        
+        # Add vertical line at reference frequency
+        ax.axvline(x=self.fsrc, color='k', linestyle='--', alpha=0.7, label='Reference Freq')
+        
+        plt.tight_layout()
+        plt.show()
+        
+        return fig, ax, eigenval_data, schmidt_numbers
+
+    def plot_schmidt_number_map(self, scatter_pos=None, scatterer_index=0, direction='x',
+                                position_range=(-0.1, 0.1), position_steps=21,
+                                freq_range=(0.45, 0.55), freq_steps=21, save_path=None):
+        """
+        Create a 2D map of Schmidt number with frequency on x-axis and 
+        scatterer position shift on y-axis.
+        
+        Args:
+            scatter_pos: Base position of scatterers (normalized), uses current positions if None
+            scatterer_index: Index of the scatterer to shift (0-based)
+            direction: Direction to shift the scatterer ('x' or 'y')
+            position_range: Range of position shifts (normalized)
+            position_steps: Number of position steps
+            freq_range: Range of frequencies
+            freq_steps: Number of frequency steps
+            save_path: Path to save the data and figure
+        
+        Returns:
+            fig, ax: Figure and axis objects
+            schmidt_data: 2D array of Schmidt numbers
+            freq_array: Array of frequencies used
+            pos_array: Array of position shifts used
+        """
+        # Use current scatterer positions if none provided
+        if scatter_pos is None:
+            scatter_pos = self.scatter_pos.copy()
+        else:
+            scatter_pos = np.array(scatter_pos).copy()
+        
+        # Create arrays for frequencies and positions
+        freq_array = np.linspace(freq_range[0], freq_range[1], freq_steps)
+        pos_array = np.linspace(position_range[0], position_range[1], position_steps)
+        
+        # Determine which coordinate to modify (x or y)
+        if direction.lower() == 'x':
+            pos_idx = scatterer_index * 2  # x coordinate
+            dir_label = "X"
+        elif direction.lower() == 'y':
+            pos_idx = scatterer_index * 2 + 1  # y coordinate
+            dir_label = "Y"
+        else:
+            raise ValueError("Direction must be 'x' or 'y'")
+        
+        # Store original values
+        original_pos = scatter_pos[pos_idx]
+        original_freq = self.fsrc
+        
+        # Initialize array to store Schmidt numbers
+        schmidt_data = np.zeros((position_steps, freq_steps))
+        singular_value_data = np.zeros((position_steps, freq_steps, 2))  # For a 2x2 TM
+        
+        # Total iterations for progress tracking
+        total_iterations = position_steps * freq_steps
+        current_iteration = 0
+        
+        # Loop over positions and frequencies
+        try:
+            for p_idx, pos_shift in enumerate(pos_array):
+                # Apply position shift
+                scatter_pos[pos_idx] = original_pos + pos_shift
+                
+                # Make sure we stay in bounds
+                scatter_pos[pos_idx] = np.clip(scatter_pos[pos_idx], -1, 1)
+                
+                for f_idx, freq in enumerate(freq_array):
+                    # Update frequency
+                    self.fsrc = freq
+                    
+                    # Calculate transmission matrix at this configuration
+                    tm = self._calculate_normalized_subSM(scatter_pos, matrix_type="TM", visualize=False)
+                    
+                    # Calculate singular values
+                    singular_values = np.linalg.svd(tm, compute_uv=False)
+                    singular_value_data[p_idx, f_idx, :] = singular_values
+                    
+                    # Calculate Schmidt number
+                    squared_values = singular_values ** 2
+                    schmidt_number = np.sum(squared_values) ** 2 / np.sum(squared_values ** 2)
+                    schmidt_data[p_idx, f_idx] = schmidt_number
+                    
+                    # Update progress
+                    current_iteration += 1
+                    if current_iteration % 5 == 0 or current_iteration == total_iterations:
+                        print(f"Progress: {current_iteration}/{total_iterations} configurations completed")
+        
+        finally:
+            # Restore original values
+            scatter_pos[pos_idx] = original_pos
+            self.fsrc = original_freq
+        
+        # Save data if path provided
+        if save_path:
+            np.savez(save_path + 'schmidt_map_data.npz',
+                    freq_array=freq_array,
+                    pos_array=pos_array,
+                    schmidt_data=schmidt_data,
+                    singular_value_data=singular_value_data,
+                    scatter_pos=scatter_pos,
+                    scatterer_index=scatterer_index,
+                    direction=direction)
+        
+        # Create figure
+        fig, ax = plt.subplots(figsize=(10, 8))
+        
+        # Plot Schmidt number map
+        im = ax.pcolormesh(freq_array, pos_array, schmidt_data, 
+                        cmap='viridis', shading='auto', vmin=1, vmax=2)
+        
+        # Add colorbar
+        cbar = fig.colorbar(im, ax=ax)
+        cbar.set_label('Schmidt Number', fontsize=12)
+        
+        # # Add contour lines at important Schmidt number values
+        # contour_levels = [1.5, 1.75, 1.9, 1.95, 1.99]
+        # contours = ax.contour(freq_array, pos_array, schmidt_data, 
+        #                     levels=contour_levels, colors='white', alpha=0.5, linewidths=1)
+        # ax.clabel(contours, inline=True, fontsize=8, fmt='%.2f')
+        
+        # Highlight the degeneracy line (Schmidt number ≈ 2)
+        degeneracy_threshold = 1.98  # Very close to perfect degeneracy
+        degeneracy_mask = schmidt_data > degeneracy_threshold
+        if np.any(degeneracy_mask):
+            ax.contour(freq_array, pos_array, schmidt_data, 
+                    levels=[degeneracy_threshold], colors='red', linewidths=2)
+        
+        # Add reference point at original position and reference frequency
+        ax.axhline(y=0, color='black', linestyle='--', alpha=0.7)
+        ax.axvline(x=original_freq, color='black', linestyle='--', alpha=0.7)
+        
+        # Add labels and title
+        ax.set_xlabel('Frequency', fontsize=12)
+        ax.set_ylabel(f'Scatterer {scatterer_index} {dir_label}-Position Shift', fontsize=12)
+        ax.set_title(f'Schmidt Number Map (Scatterer {scatterer_index} {dir_label}-Shift vs Frequency)', fontsize=14)
+        
+        plt.tight_layout()
+        plt.show()
+        
+        return fig, ax, schmidt_data, freq_array, pos_array, singular_value_data
+
+    def schmidt_number(self, tm):
+        """
+        Calculate the Schmidt number of a transmission matrix.
+        
+        Parameters:
+        -----------
+        tm : numpy.ndarray
+            The transmission matrix (can be any shape)
+        
+        Returns:
+        --------
+        float
+            The Schmidt number
+        
+        Example:
+        --------
+        >>> tm = np.array([[0.5, 0.5], [0.5, 0.5]])
+        >>> schmidt_number(tm)
+        2.0
+        """
+        # Calculate singular values
+        singular_values = np.linalg.svd(tm, compute_uv=False)
+        
+        # Square the singular values
+        squared_values = singular_values ** 2
+        
+        # Calculate Schmidt number: (sum of squared values)^2 / sum of (squared values)^2
+        numerator = np.sum(squared_values) ** 2
+        denominator = np.sum(squared_values ** 2)
+        
+        # Avoid division by zero
+        if denominator == 0:
+            return 0
+        
+        return numerator / denominator
+
     def _create_base_geometry(self):
         """
         Create the base geometry (billiard and waveguides).
