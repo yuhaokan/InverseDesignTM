@@ -414,6 +414,238 @@ class BilliardTwoEnv(BilliardBaseEnv):
         
         return fig, ax, coalescence_data
 
+    def calculate_and_save_TM_sweep(self, scatter_pos=None, scatter_idx=0,
+                                position_range=(-0.1, 0.1), position_points=21,
+                                freq_range=(0.45, 0.55), freq_points=21,
+                                direction='x', save_path=None):
+        """
+        Calculate and save transmission matrices (TM) as a function of frequency and
+        perturbation of a single scatterer's position.
+
+        Args:
+            scatter_pos: Base position of scatterers (normalized), uses current positions if None
+            scatter_idx: Index of the scatterer to perturb (0 to n_scatterers-1)
+            position_range: Tuple of (min_delta, max_delta) for position perturbation
+            position_points: Number of position perturbation points to sample
+            freq_range: Tuple of (min_freq, max_freq) around self.fsrc
+            freq_points: Number of frequency points to sample
+            direction: Direction to perturb the scatterer ('x' or 'y')
+            save_path: Path to save the data (required)
+
+        Returns:
+            Dictionary containing the frequency array, position delta array, and TM data
+        """
+        if save_path is None:
+            raise ValueError("save_path must be provided to save the TM data")
+
+        # Use current scatterer positions if none provided
+        if scatter_pos is None:
+            scatter_pos = self.scatter_pos.copy()
+        else:
+            scatter_pos = np.array(scatter_pos).copy()
+
+        # Create frequency and position delta arrays
+        freqs = np.linspace(freq_range[0], freq_range[1], freq_points)
+        position_deltas = np.linspace(position_range[0], position_range[1], position_points)
+
+        # Determine the actual index in the scatter_pos array based on direction
+        if direction.lower() == 'x':
+            pos_idx = scatter_idx * 2  # x-coordinate
+        elif direction.lower() == 'y':
+            pos_idx = scatter_idx * 2 + 1  # y-coordinate
+        else:
+            raise ValueError("Direction must be 'x' or 'y'")
+
+        # Initialize results array for storing TM data
+        # Each TM is a 2x2 complex matrix, so we need a 4D array
+        tm_data = np.zeros((position_points, freq_points, 2, 2), dtype=np.complex128)
+
+        # Store original values to restore later
+        original_freq = self.fsrc
+        original_pos = scatter_pos[pos_idx]
+
+        # Make sure we're not using any loss/gain
+        original_loss = getattr(self, 'uniform_loss_factor', 0)
+        self.uniform_loss_factor = 0
+
+        # Set up progress tracking
+        total_iterations = position_points * freq_points
+        current_iteration = 0
+
+        try:
+            # Loop over position perturbations and frequencies
+            for i, delta in enumerate(position_deltas):
+                # Update position
+                scatter_pos[pos_idx] = original_pos + delta
+
+                # Make sure the perturbed position stays within bounds [-1, 1]
+                scatter_pos[pos_idx] = np.clip(scatter_pos[pos_idx], -1, 1)
+
+                for j, freq in enumerate(freqs):
+                    # Update frequency
+                    self.fsrc = freq
+
+                    # Calculate TM with current settings
+                    tm = self._calculate_normalized_subSM(scatter_pos, matrix_type="TM", visualize=False)
+                    
+                    # Store the TM
+                    tm_data[i, j] = tm
+
+                    # Update progress
+                    current_iteration += 1
+                    if current_iteration % 5 == 0 or current_iteration == total_iterations:
+                        print(f"Progress: {current_iteration}/{total_iterations} iterations completed")
+
+        finally:
+            # Restore original values
+            self.fsrc = original_freq
+            scatter_pos[pos_idx] = original_pos
+            self.uniform_loss_factor = original_loss
+
+        # Save data
+        save_data = {
+            'freqs': freqs,
+            'position_deltas': position_deltas,
+            'tm_data': tm_data,
+            'scatter_idx': scatter_idx,
+            'direction': direction,
+            'original_position': original_pos
+        }
+        
+
+        np.savez(save_path + 'tm_sweep.npz', **save_data)
+        print(f"TM data saved to {save_path}")
+
+        return save_data
+
+    def get_eigenvectors_degenerate_case(self, scatter_pos=None):
+        """
+        Extracts the eigenvector and generalized eigenvector for a 2x2 matrix 
+        with degenerate eigenvalues.
+        
+        Args:
+            scatter_pos: Position of scatterers (normalized), uses current positions if None
+            
+        Returns:
+            tuple: (eigenvalue, eigenvector, generalized_eigenvector)
+        """
+        # Use current scatterer positions if none provided
+        if scatter_pos is None:
+            scatter_pos = self.scatter_pos
+            
+        # Calculate the transmission matrix
+        tm = self._calculate_normalized_subSM(scatter_pos, matrix_type="TM", visualize=False)
+        
+        # Get eigenvalues and eigenvectors from numpy
+        eigenvalues, eigenvectors = np.linalg.eig(tm)
+        
+        # Use the average as the single eigenvalue
+        eigenvalue = np.mean(eigenvalues)
+        eigenvector = eigenvectors[:, 0]
+
+        # Normalized eigenvector
+        eigenvector = eigenvector/np.linalg.norm(eigenvector)
+
+        # generalized_eigenvector = np.array([-eigenvector[1].conj(), eigenvector[0].conj()])
+
+        # For degenerate case, we need to solve for the generalized eigenvector
+        # The standard eigenvector is in the null space of (A - λI)
+        A_minus_lambdaI = tm - eigenvalue * np.eye(2)
+
+        generalized_eigenvector = np.linalg.lstsq(A_minus_lambdaI, eigenvector, rcond=None)[0]
+
+        # Make them orthogonal
+        # generalized_eigenvector = generalized_eigenvector - eigenvector.conj().T @ generalized_eigenvector * eigenvector
+
+       
+        # Perform a final check
+        check1 = np.linalg.norm(A_minus_lambdaI @ eigenvector)
+        check2 = np.linalg.norm(A_minus_lambdaI @ generalized_eigenvector - eigenvector)
+        check3 = np.linalg.norm(eigenvector.T.conj() @ generalized_eigenvector)
+        
+        print(f"Verification check for eigenvector: ||(A-λI)v|| = {check1}")
+        print(f"Verification check for generalized eigenvector: ||(A-λI)g - v|| = {check2}")
+        print(f"Verification check for orthogonality <v|g> = {check3}")
+        
+        P = np.column_stack([eigenvector, generalized_eigenvector])
+        print(P)
+        J = np.linalg.inv(P) @ tm @ P
+
+        print(J)
+
+        return eigenvalue, eigenvector, generalized_eigenvector
+
+    def get_P(self, scatter_pos=None):
+        """
+        Extracts the eigenvector and generalized eigenvector for a 2x2 matrix 
+        with degenerate eigenvalues.
+        
+        Args:
+            scatter_pos: Position of scatterers (normalized), uses current positions if None
+            
+        Returns:
+            tuple: (eigenvalue, eigenvector, generalized_eigenvector)
+        """
+        # Use current scatterer positions if none provided
+        if scatter_pos is None:
+            scatter_pos = self.scatter_pos
+            
+        # Calculate the transmission matrix
+        tm = self._calculate_normalized_subSM(scatter_pos, matrix_type="TM", visualize=False)
+        
+        # Get eigenvalues and eigenvectors from numpy
+        eigenvalues, eigenvectors = np.linalg.eig(tm)
+        
+        # Use the average as the single eigenvalue
+        eigenvalue = np.mean(eigenvalues)
+        eigenvector = eigenvectors[:, 0]
+
+        # Normalized eigenvector
+        eigenvector = eigenvector/np.linalg.norm(eigenvector)
+
+        # For degenerate case, we need to solve for the generalized eigenvector
+        # The standard eigenvector is in the null space of (A - λI)
+        A_minus_lambdaI = tm - eigenvalue * np.eye(2)
+
+        generalized_eigenvector = np.linalg.lstsq(A_minus_lambdaI, eigenvector, rcond=None)[0]
+        generalized_eigenvector = generalized_eigenvector - eigenvector.conj().T @ generalized_eigenvector * eigenvector
+        
+        P = np.column_stack([eigenvector, generalized_eigenvector])
+
+        C01 = np.abs(generalized_eigenvector.conj().T @ tm @ eigenvector)**2
+        C10 = np.abs(eigenvector.conj().T @ tm @ generalized_eigenvector)**2
+        print(C01, C10)
+
+        return P
+
+    def get_Jordan_near_EP(self, P, scatter_pos=None):
+        """
+        Extracts the eigenvector and generalized eigenvector for a 2x2 matrix 
+        with degenerate eigenvalues.
+        
+        Args:
+            scatter_pos: Position of scatterers (normalized), uses current positions if None
+            
+        Returns:
+            tuple: (eigenvalue, eigenvector, generalized_eigenvector)
+        """
+        # Use current scatterer positions if none provided
+        if scatter_pos is None:
+            scatter_pos = self.scatter_pos
+            
+        # Calculate the transmission matrix
+        tm = self._calculate_normalized_subSM(scatter_pos, matrix_type="TM", visualize=False)
+        
+        # P for best_pos_BilliardTwo_Env12_DegenerateEigVal_PPO_8
+        # P = np.array([[  0.89466086+0j,             26.24562364+92.36013569j ],
+        #               [ -0.41623016+0.16227879j,    -28.96327786-38.2088546j]])
+
+        
+        J = np.linalg.inv(P) @ tm @ P
+
+        return J
+
+    
 if __name__ == "__main__":
     env = BilliardTwoEnv()
     # # env = gym.make('MyEnv-v0')

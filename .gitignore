@@ -2,6 +2,9 @@ logs/
 positions/
 models/
 tmp*
+*.npz
+*.csv
+plot_2d.py
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

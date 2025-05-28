@@ -200,74 +200,72 @@ class BilliardBaseEnv(gym.Env):
         Returns:
             Incoming field amplitude
         """
-        # # Use the first source port as reference
-        # input_port = self.source_ports[0]
+        # Use the first source port as reference
+        input_port = self.source_ports[0]
         
-        # # Create a simulation with just a single waveguide
-        # waveguide_only_geometry = []
+        # Create a simulation with just a single waveguide
+        waveguide_only_geometry = []
         
-        # # Add only one waveguide
-        # self._create_metal_waveguide(
-        #     waveguide_only_geometry,
-        #     input_port["position"].x,
-        #     input_port["position"].y,
-        #     self.waveguide_length,
-        #     self.waveguide_width
-        # )
+        # Add only one waveguide
+        self._create_metal_waveguide(
+            waveguide_only_geometry,
+            input_port["position"].x,
+            input_port["position"].y,
+            self.waveguide_length,
+            self.waveguide_width
+        )
         
-        # # Create simulation for reference incoming field
-        # cell_size = mp.Vector3(self.sx + 2*self.waveguide_length, self.sy + 2*self.metal_thickness)
-        # pml_layers = [mp.PML(self.pml_thickness, direction=mp.X)]
+        # Create simulation for reference incoming field
+        cell_size = mp.Vector3(self.sx + 2*self.waveguide_length, self.sy + 2*self.metal_thickness)
+        pml_layers = [mp.PML(self.pml_thickness, direction=mp.X)]
         
-        # sources = [mp.EigenModeSource(
-        #     mp.ContinuousSource(frequency=self.fsrc),
-        #     center=input_port["position"],
-        #     size=mp.Vector3(0, self.waveguide_width - self.source_length_diff),
-        #     eig_band=self.mode_num,
-        #     eig_parity=self.eig_parity
-        # )]
+        sources = [mp.EigenModeSource(
+            mp.ContinuousSource(frequency=self.fsrc),
+            center=input_port["position"],
+            size=mp.Vector3(0, self.waveguide_width - self.source_length_diff),
+            eig_band=self.mode_num,
+            eig_parity=self.eig_parity
+        )]
         
-        # ref_sim = mp.Simulation(
-        #     cell_size=cell_size,
-        #     boundary_layers=pml_layers,
-        #     geometry=waveguide_only_geometry,
-        #     sources=sources,
-        #     resolution=self.resolution,
-        #     dimensions=2
-        # )
+        ref_sim = mp.Simulation(
+            cell_size=cell_size,
+            boundary_layers=pml_layers,
+            geometry=waveguide_only_geometry,
+            sources=sources,
+            resolution=self.resolution,
+            dimensions=2
+        )
         
-        # # Add a monitor slightly in front of the source to measure incoming field
-        # # Place it a small distance in the direction of propagation
-        # monitor_pos = mp.Vector3(
-        #     input_port["position"].x + 3,  # Slightly in front of source
-        #     input_port["position"].y,
-        #     input_port["position"].z
-        # )
+        # Add a monitor slightly in front of the source to measure incoming field
+        # Place it a small distance in the direction of propagation
+        monitor_pos = mp.Vector3(
+            input_port["position"].x + 3,  # Slightly in front of source
+            input_port["position"].y,
+            input_port["position"].z
+        )
         
-        # source_monitor = ref_sim.add_mode_monitor(
-        #     self.fsrc, 0, 1,
-        #     mp.ModeRegion(
-        #         center=monitor_pos,
-        #         size=mp.Vector3(0, self.waveguide_width - self.source_length_diff)
-        #     )
-        # )
+        source_monitor = ref_sim.add_mode_monitor(
+            self.fsrc, 0, 1,
+            mp.ModeRegion(
+                center=monitor_pos,
+                size=mp.Vector3(0, self.waveguide_width - self.source_length_diff)
+            )
+        )
         
-        # # Run reference simulation
-        # ref_sim.run(until=self.n_runs)  # Shorter run time is sufficient for straight waveguide
+        # Run reference simulation
+        ref_sim.run(until=self.n_runs)  # Shorter run time is sufficient for straight waveguide
         
-        # # Get the incoming field amplitude
-        # source_data = ref_sim.get_eigenmode_coefficients(
-        #     source_monitor, [1],
-        #     eig_parity=self.eig_parity
-        # )
-        # incoming_amplitude = abs(source_data.alpha[0,0,0])
+        # Get the incoming field amplitude
+        source_data = ref_sim.get_eigenmode_coefficients(
+            source_monitor, [1],
+            eig_parity=self.eig_parity
+        )
+        incoming_amplitude = abs(source_data.alpha[0,0,0])
         
-        # # Clean up
-        # ref_sim.reset_meep()
+        # Clean up
+        ref_sim.reset_meep()
         
-        # # print(incoming_amplitude)
-        # return incoming_amplitude
-        return 73.7
+        return incoming_amplitude  # 73.7
 
     def _calculate_normalized_subSM(self, normalized_scatterers_positions, matrix_type="TM", visualize=False):
         """
@@ -660,7 +658,7 @@ class BilliardBaseEnv(gym.Env):
         # Clean up
         sim.reset_meep()
 
-    def plot_lowest_transmission_eigenchannel_steady_state(self, scatter_positions=None, field_component=mp.Ez):
+    def plot_lowest_transmission_eigenchannel_steady_state(self, scatter_positions=None, field_component=mp.Ez, matrix_type="TM"):
         """
         Plot the steady-state field pattern of the lowest eigenchannel (highest transmission/lowest loss).
         
@@ -683,7 +681,7 @@ class BilliardBaseEnv(gym.Env):
         
         # First, calculate the full scattering matrix
         # We need all source ports and output ports to construct the matrix
-        tm = self._calculate_normalized_subSM(scatter_positions, matrix_type="TM", visualize=False)
+        tm = self._calculate_normalized_subSM(scatter_positions, matrix_type, visualize=False)
         tm = tm.T
 
         # Perform Singular Value Decomposition (SVD) to find eigenchannels
@@ -692,9 +690,10 @@ class BilliardBaseEnv(gym.Env):
         print(f"Singular values: {S}")
         
         min_idx = np.argmin(S)
+        print(f"Lowest Singular values: {S[min_idx]}")
         # The highest singular value corresponds to the lowest-loss eigenchannel
         # The corresponding right singular vector tells us how to excite this channel
-        eigenchannel_weights = Vh[min_idx].conj()  # First row of V† matrix
+        eigenchannel_weights = Vh[min_idx].conj()  # row of V† matrix
             
         # Normalize the weights
         eigenchannel_weights = eigenchannel_weights / np.linalg.norm(eigenchannel_weights)
@@ -1005,7 +1004,7 @@ class BilliardBaseEnv(gym.Env):
             
         # Save if path provided
         if save_path:
-            np.savez(save_path + 'phase_map.npz', freqs=freqs, losses=losses, det=det)
+            np.savez(save_path + 'det_phase_map.npz', freqs=freqs, losses=losses, det_angles=det_angles, det_magnitudes=det_magnitudes)
 
         # Create figure with two subplots - phase and magnitude
         fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(16, 8))
@@ -1116,7 +1115,7 @@ class BilliardBaseEnv(gym.Env):
         
         # Save if path provided
         if save_path:
-            np.savez(save_path + 'eigenvalue_spectrum.npz', 
+            np.savez(save_path + 'singularvalue_spectrum.npz', 
                     freqs=freqs, 
                     eigenvalues=eigenval_data,
                     scatter_pos=scatter_pos)

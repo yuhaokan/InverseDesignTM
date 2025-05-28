@@ -11,7 +11,7 @@ class SingleWaveguideEnv():
 
         # MEEP simulation parameters
         self.resolution = 15  # pixels/cm
-        self.n_runs = 100  # number of runs during simulation
+        self.n_runs = 200  # number of runs during simulation
 
         self.fsrc = 15.0 / 30  # normalized frequency (15 GHz)
 
@@ -29,6 +29,8 @@ class SingleWaveguideEnv():
         self.epsilon_bg = 1.0  # background material (air)
 
         self.mode_num = 1
+
+        self.eig_parity = mp.EVEN_Y + mp.ODD_Z
 
         # Define ports
         self.source_port = {
@@ -81,7 +83,7 @@ class SingleWaveguideEnv():
         sources = [mp.EigenModeSource(
             mp.ContinuousSource(frequency=self.fsrc),
             center=self.source_port["position"],
-            size=mp.Vector3(0, self.waveguide_width - 0.1),
+            size=mp.Vector3(0, self.waveguide_width - 0.2),
             eig_band=self.mode_num,
             eig_parity=mp.EVEN_Y # Polarization of waveguide mode
         )]
@@ -100,7 +102,7 @@ class SingleWaveguideEnv():
             self.fsrc, 0, 1,
             mp.ModeRegion(
                 center=self.output_port["position"],
-                size=mp.Vector3(0, self.waveguide_width - 0.1)
+                size=mp.Vector3(0, self.waveguide_width - 0.2)
             )
         )
 
@@ -135,7 +137,93 @@ class SingleWaveguideEnv():
 
         return transmission
 
-# Example usage:
-waveguide = SingleWaveguideEnv()
-transmission = waveguide.run_simulation(visualize=False)
-print(f"Transmission: {transmission}")
+    def get_transmission_spectrum(self, freq_min=0.3, freq_max=0.6, freq_points=51):
+        """
+        Calculate transmission spectrum over a frequency range.
+        
+        Args:
+            freq_min: Minimum frequency (normalized)
+            freq_max: Maximum frequency (normalized)
+            freq_points: Number of frequency points
+            visualize: Whether to visualize the spectrum
+            
+        Returns:
+            tuple: (frequencies, transmission_values)
+        """
+        # Create frequency array
+        frequencies = np.linspace(freq_min, freq_max, freq_points)
+        transmission_values = np.zeros(freq_points, dtype=np.complex64)
+        
+        # Store original frequency
+        original_freq = self.fsrc
+        
+        print("Calculating transmission spectrum...")
+        
+        # Loop through frequencies and calculate transmission
+        for i, freq in enumerate(frequencies):
+            self.fsrc = freq  # Set current frequency
+            
+            # Create geometry for the waveguide
+            geometry = self._create_geometry()
+            
+            # Set up the simulation
+            cell_size = mp.Vector3(self.waveguide_length, self.waveguide_width + 2 * self.metal_thickness + 4)
+            pml_layers = [mp.PML(self.pml_thickness, direction=mp.X)]
+            
+            sources = [mp.EigenModeSource(
+                mp.ContinuousSource(frequency=freq),
+                center=self.source_port["position"],
+                size=mp.Vector3(0, self.waveguide_width - 0.2),
+                eig_band=self.mode_num,
+                eig_parity=self.eig_parity  # Polarization of waveguide mode
+            )]
+            
+            sim = mp.Simulation(
+                cell_size=cell_size,
+                boundary_layers=pml_layers,
+                geometry=geometry,
+                sources=sources,
+                resolution=self.resolution,
+                dimensions=2
+            )
+            
+            # Add monitor at output port
+            mode_monitor = sim.add_mode_monitor(
+                freq, 0, 1,
+                mp.ModeRegion(
+                    center=self.output_port["position"],
+                    size=mp.Vector3(0, self.waveguide_width - 0.2)
+                )
+            )
+            
+            # Run simulation
+            sim.run(until=self.n_runs)
+            
+            # Calculate transmission
+            mode_data = sim.get_eigenmode_coefficients(
+                mode_monitor, [1],
+                eig_parity=self.eig_parity
+            )
+            
+            transmission_values[i] = mode_data.alpha[0, 0, 0]
+            
+            sim.reset_meep()  # Free MEEP memory
+            
+            # Print progress
+            if (i + 1) % 5 == 0 or i == 0 or i == len(frequencies) - 1:
+                print(f"Progress: {i + 1}/{len(frequencies)} frequencies calculated")
+        
+        # Restore original frequency
+        self.fsrc = original_freq
+
+        np.savez('emptyWaveguideSpectrum.npz', freqs=frequencies, transmission_values=transmission_values)
+        
+        return frequencies, transmission_values
+
+if __name__ == "__main__":
+    # Example usage:
+    waveguide = SingleWaveguideEnv()
+    transmission = waveguide.run_simulation(visualize=True)
+    # print(f"Transmission: {transmission}")
+
+    # waveguide.get_transmission_spectrum(freq_min=0.4998, freq_max=0.5002, freq_points=51)
