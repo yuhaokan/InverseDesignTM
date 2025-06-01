@@ -532,49 +532,119 @@ class BilliardBaseEnv(gym.Env):
         plt.tight_layout()
         plt.show()
 
-    def render(self):
-        """Render the current state of the environment"""
-        # Convert normalized positions to actual coordinates
-        actual_positions = []
-        for i in range(0, 2 * self.n_scatterers, 2):
-            x = self.scatter_pos[i] * (self.sx_scatterer/2)
-            y = self.scatter_pos[i+1] * (self.sy_scatterer/2)
-            actual_positions.append((x, y))
+    def render(self, normalized_scatterers_positions=None):
+        """
+        Plot the full structure with scatterers on a white background.
+
+        Args:
+            normalized_scatterers_positions: Normalized positions of scatterers (optional)
+                                            Uses self.scatter_pos if not provided
+        """
+        # Use provided positions or current positions
+        positions = normalized_scatterers_positions if normalized_scatterers_positions is not None else self.scatter_pos
+
+        # Create geometry with scatterers
+        geometry = self._create_full_geometry(positions)
+
+        # Create a simulation instance just for visualization
+        cell_size = mp.Vector3(self.sx + 2 * self.waveguide_length, self.sy + 2 * self.metal_thickness)
+
+        sim = mp.Simulation(
+            cell_size=cell_size,
+            geometry=geometry,
+            resolution=self.resolution,
+            dimensions=2
+        )
+
+        # Initialize the simulation (creates fields)
+        sim.init_sim()
+
+        # Create figure with white background and specify axes explicitly
+        fig = plt.figure(figsize=(10, 8), facecolor='white')
+        ax = fig.add_subplot(111)
+
+        # Plot the structure with customized appearance
+        sim.plot2D(
+            ax=ax,  # Specify the axes for the plot
+            plot_eps_flag=True,  # Plot dielectric function
+            eps_parameters={
+                'alpha': 1.0,  # Full opacity
+                'contour': False,
+                'cmap': 'binary_r'  # Use binary colormap (black/white)
+            }
+        )
+
+        # Create a simpler fixed colorbar without relying on get_epsilon
+        try:
+            # Create a scalar mappable with a fixed range
+            sm = plt.cm.ScalarMappable(cmap='binary_r', norm=plt.Normalize(1, self.epsilon_scatter))
+            sm.set_array([])
+            # fig.colorbar(sm, ax=ax, label="Dielectric Constant (ε)")
+        except Exception as e:
+            print(f"Could not create colorbar: {e}")
+
+        # Add color to scatterers for better visibility
+        for i in range(0, len(positions), 2):
+            x = positions[i] * (self.sx_scatterer / 2)
+            y = positions[i + 1] * (self.sy_scatterer / 2)
+            circle = plt.Circle((x, y), self.scatterer_radius,
+                                color='grey', fill=True, alpha=0.7)
+            ax.add_patch(circle)
+
+        # Highlight PML regions with semi-transparent overlay
+        pml_color = 'lightblue'
+        pml_alpha = 0.3
+
+        # Draw PML regions as semi-transparent rectangles
+        # Left PML
+        ax.add_patch(plt.Rectangle(
+            (-cell_size.x / 2, -cell_size.y / 2),
+            self.pml_thickness, cell_size.y,
+            color=pml_color, alpha=pml_alpha, linewidth=1, edgecolor='blue'
+        ))
+
+        # Right PML
+        ax.add_patch(plt.Rectangle(
+            (cell_size.x / 2 - self.pml_thickness, -cell_size.y / 2),
+            self.pml_thickness, cell_size.y,
+            color=pml_color, alpha=pml_alpha, linewidth=1, edgecolor='blue'
+        ))
+
+        # Add legend for PML
+        # pml_patch = plt.Rectangle((0, 0), 1, 1, color=pml_color, alpha=pml_alpha, linewidth=1, edgecolor='blue')
+        # scatterer_patch = plt.Circle((0, 0), radius=1, color='red', alpha=0.7)
+        # ax.legend([pml_patch, scatterer_patch], ['PML Layer', 'Scatterers'], loc='upper right')
+
+        # Add source positions (green diamonds)
+        source_marker_size = self.waveguide_width * 0.8
+        for port in self.source_ports:
+            # Add a line to show the source width
+            ax.plot(
+                [port["position"].x, port["position"].x],
+                [port["position"].y - source_marker_size/2, port["position"].y + source_marker_size/2],
+                color='red', linewidth=3
+            )
         
-        fig, ax = plt.subplots(figsize=(10, 6))
-        
-        # Draw cavity bounds
-        ax.add_patch(Rectangle((-self.sx/2, -self.sy/2), self.sx, self.sy, 
-                            fill=False, edgecolor='black', linewidth=2))
-        
-        # Draw waveguides based on port definitions
-        for port in self.source_ports + self.output_ports:
-            # Get waveguide position
-            x_center = port["position"].x
-            y_center = port["position"].y
+        # Add output monitor positions (orange squares)
+        for port in self.output_ports:
+            # Add a line to show the monitor width
+            ax.plot(
+                [port["position"].x, port["position"].x],
+                [port["position"].y - source_marker_size/2, port["position"].y + source_marker_size/2],
+                color='blue', linewidth=3
+            )
             
-            # Draw waveguide outline
-            ax.add_patch(Rectangle(
-                (x_center-self.waveguide_length/2, y_center-self.waveguide_width/2),
-                self.waveguide_length, self.waveguide_width,
-                fill=False, edgecolor='blue', linewidth=1.5
-            ))
-        
-        # Draw scatterers
-        for i, pos in enumerate(actual_positions):
-            ax.add_patch(Circle(pos, self.scatterer_radius, 
-                            fill=True, alpha=0.7, facecolor='red'))
-            ax.text(pos[0], pos[1], f"{i+1}", ha='center', va='center', 
-                color='white', fontweight='bold')
-        
-        ax.set_xlim(-self.sx/2-self.waveguide_length-1, self.sx/2+self.waveguide_length+1)
-        ax.set_ylim(-self.sy/2-1, self.sy/2+1)
-        ax.set_aspect('equal')
-        ax.grid(True, linestyle='--', alpha=0.7)
-        ax.set_title(f'Current Scatterer Configuration (Step {self.step_count})')
-        
+        ax.set_xlabel("")
+        ax.set_ylabel("")
+        ax.set_xticks([])
+        ax.set_yticks([])
+
+        # Improve appearance
         plt.tight_layout()
         plt.show()
+        sim.reset_meep()
+
+        return fig
 
     def plot_lowest_transmission_eigenchannel(self, scatter_positions, field_component=mp.Ez):
         """
