@@ -8,6 +8,8 @@ from stable_baselines3.common.utils import get_linear_fn
 import torch
 from torchviz import make_dot
 from torch.utils.tensorboard import SummaryWriter
+import inspect
+import torch.nn as nn
 # import argparse
 
 from envs import BilliardTwoEnv, BilliardThreeEnv
@@ -148,171 +150,101 @@ def train(env_name, algo_name, error_threshold):
                     clip_range=0.2,
                     gamma=0.999, tensorboard_log=log_dir)
 
-        # add_ppo_graph_to_tensorboard(model, log_dir)
-        # add_labeled_ppo_graph_to_tensorboard(model, log_dir)
-        # plot_network_architecture(model)
-        # visualize_network_in_tensorboard(model, log_dir + "/model_architecture")
-        mlp_extractor = visualize_complete_ppo_network(model, os.path.join(log_dir, "model_architecture2"))
+        # visualize_complete_ppo_network(model, os.path.join(log_dir, "model_architecture0"))
 
-    # # Add model architecture visualization to TensorBoard
-    # if algo_name == "PPO":
+    if algo_name == "SAC":
+        policy_kwargs_SAC = dict( # this policy is for SAC,  SAC uses Q-functions (critics) instead of value functions, so need to use the qf key.
+            net_arch=dict(
+                pi=[256, 256],  # Actor/policy network architecture
+                qf=[256, 256]   # Critic/Q-function network architecture
+            ),
+            activation_fn=torch.nn.ReLU
+        )
 
-    #     # Create a writer for the graph visualization
-    #     graph_writer = SummaryWriter(os.path.join(log_dir, f"{env_name}_{algo_name}_graph"))
+        # With train_freq=1, gradient_steps=5, and n_envs=4:
+        # Each environment step collects 4 new transitions (one from each parallel environment)
+        # After collecting these 4 transitions, the agent performs 5 separate gradient updates
+        # Each gradient update uses a randomly sampled batch from the entire replay buffer (not just the 4 new transitions)
+        model = SAC('MlpPolicy', env, verbose=1, device='cpu', 
+                learning_rate=lr_schedule,
+                policy_kwargs=policy_kwargs_SAC,
+                batch_size=256,
+                buffer_size=100000,  # Experience replay buffer size
+                train_freq=4,
+                gradient_steps=8,
+                learning_starts=512,  # Add this to collect enough diverse experiences before learning
+                gamma=0.999,
+                tau=0.005,  # For soft target updates
+                ent_coef='auto',  # Automatic entropy tuning
+                tensorboard_log=log_dir)
 
-    #     # Create a dummy input matching the observation space dimension
-    #     n_scatterers = env.get_attr('n_scatterers')[0]
-    #     dummy_input = torch.zeros(1, 2 * n_scatterers, dtype=torch.float32)
-
-    #     try:
-    #         # Set networks to eval mode for tracing
-    #         model.policy.eval()
-
-    #         # Create a wrapper that captures the COMPLETE flow
-    #         class CompleteActorCritic(torch.nn.Module):
-    #             def __init__(self, policy):
-    #                 super().__init__()
-    #                 self.policy = policy
-
-    #             def forward(self, obs):
-    #                 # Get processed features
-    #                 processed_obs = self.policy.extract_features(obs)
-
-    #                 # Pass through MLP extractor
-    #                 pi_features = self.policy.mlp_extractor.forward_actor(processed_obs)
-    #                 vf_features = self.policy.mlp_extractor.forward_critic(processed_obs)
-
-    #                 # Get actions and values
-    #                 actions = self.policy.action_net(pi_features)
-    #                 values = self.policy.value_net(vf_features)
-
-    #                 return actions, values
-
-    #         # Create and trace the complete module
-    #         complete_module = CompleteActorCritic(model.policy)
-    #         traced_complete = torch.jit.trace(complete_module, dummy_input)
-
-    #         # Add to TensorBoard
-    #         graph_writer.add_graph(traced_complete, dummy_input)
-    #         print("Successfully added complete network graph to TensorBoard")
-
-    #     except Exception as e:
-    #         print(f"Failed to add network graphs to TensorBoard: {e}")
-    #         import traceback
-    #         traceback.print_exc()
-    #     finally:
-    #         model.policy.train()
-    #         graph_writer.close()
-
-    # if algo_name == "SAC":
-    #     policy_kwargs_SAC = dict( # this policy is for SAC,  SAC uses Q-functions (critics) instead of value functions, so need to use the qf key.
-    #         net_arch=dict(
-    #             pi=[256, 256],  # Actor/policy network architecture
-    #             qf=[256, 256]   # Critic/Q-function network architecture
-    #         ),
-    #         activation_fn=torch.nn.ReLU
-    #     )
-
-    #     # With train_freq=1, gradient_steps=5, and n_envs=4:
-    #     # Each environment step collects 4 new transitions (one from each parallel environment)
-    #     # After collecting these 4 transitions, the agent performs 5 separate gradient updates
-    #     # Each gradient update uses a randomly sampled batch from the entire replay buffer (not just the 4 new transitions)
-    #     model = SAC('MlpPolicy', env, verbose=1, device='cpu', 
-    #             learning_rate=lr_schedule,
-    #             policy_kwargs=policy_kwargs_SAC,
-    #             batch_size=256,
-    #             buffer_size=100000,  # Experience replay buffer size
-    #             train_freq=4,
-    #             gradient_steps=8,
-    #             learning_starts=512,  # Add this to collect enough diverse experiences before learning
-    #             gamma=0.999,
-    #             tau=0.005,  # For soft target updates
-    #             ent_coef='auto',  # Automatic entropy tuning
-    #             tensorboard_log=log_dir)
-
-    # # Create callback
-    # saveBestPosCallback = SaveBestPosCallback(
-    #     error_threshold=error_threshold,
-    #     save_freq=1000,  # Save checkpoint every 1000 steps
-    #     verbose=1
-    # )
-    # tensorboardStepCallback = TensorboardStepCallbackV2(log_freq=32)
-    # try:
-    #     # Train until we find a satisfactory solution
-    #     model.learn(
-    #         total_timesteps=1000000,  # Maximum steps if solution isn't found
-    #         callback=[saveBestPosCallback, tensorboardStepCallback],
-    #         tb_log_name=f"{env_name}_{algo_name}",
-    #         log_interval=1
-    #     )
-    # except Exception as e:
-    #     print(f"Training stopped: {e}")
+    # Create callback
+    saveBestPosCallback = SaveBestPosCallback(
+        error_threshold=error_threshold,
+        save_freq=1000,  # Save checkpoint every 1000 steps
+        verbose=1
+    )
+    tensorboardStepCallback = TensorboardStepCallbackV2(log_freq=32)
+    try:
+        # Train until we find a satisfactory solution
+        model.learn(
+            total_timesteps=1000000,  # Maximum steps if solution isn't found
+            callback=[saveBestPosCallback, tensorboardStepCallback],
+            tb_log_name=f"{env_name}_{algo_name}",
+            log_interval=1
+        )
+    except Exception as e:
+        print(f"Training stopped: {e}")
    
-    # if saveBestPosCallback.best_error < error_threshold:
-    #     print("Successfully found solution:")
-    #     print(f"Best error: {saveBestPosCallback.best_error}")
-    #     print(f"Best position: {saveBestPosCallback.best_pos}")
-    #     return saveBestPosCallback.best_pos
-    # else:
-    #     print(f"Could not find solution below threshold. Best error: {saveBestPosCallback.best_error}")
-    #     return saveBestPosCallback.best_pos  # Return best found even if not below threshold
+    if saveBestPosCallback.best_error < error_threshold:
+        print("Successfully found solution:")
+        print(f"Best error: {saveBestPosCallback.best_error}")
+        print(f"Best position: {saveBestPosCallback.best_pos}")
+        return saveBestPosCallback.best_pos
+    else:
+        print(f"Could not find solution below threshold. Best error: {saveBestPosCallback.best_error}")
+        return saveBestPosCallback.best_pos  # Return best found even if not below threshold
 
 def visualize_complete_ppo_network(model, log_dir):
-    """Create a more detailed visualization of the PPO network architecture"""
+    print(inspect.getsource(model.policy.forward))
+
+    class PPO_net(nn.Module):
+        """Module that shows both actor and critic pathways with proper connections"""
+        def __init__(self, policy):
+            super().__init__()
+            # Feature extraction layer
+            self.features_extractor = policy.features_extractor
+            
+            # Actor components
+            self.policy_net = policy.mlp_extractor.policy_net
+            self.action_net = policy.action_net
+            
+            # Critic components
+            self.value_net_mlp = policy.mlp_extractor.value_net
+            self.value_head = policy.value_net
+            
+        def forward(self, obs):
+            # Extract features (shared step)
+            features = self.features_extractor(obs)
+            
+            # Actor pathway
+            pi_latent = self.policy_net(features)
+            actions = self.action_net(pi_latent)
+            
+            # Critic pathway
+            vf_latent = self.value_net_mlp(features)
+            values = self.value_head(vf_latent)
+            
+            # Return both outputs to ensure both paths appear in the graph
+            return actions, values
+
+    # Create visualization
     writer = SummaryWriter(log_dir)
-    
-    # Access the policy network components
-    policy = model.policy
-    
-    # Print the complete policy structure first (for reference)
-    print("Complete PPO Policy Structure:")
-    print(policy)
-    
-    # Create dummy input based on your observation space
-    dummy_obs = torch.zeros(1, env.observation_space.shape[0])
-    
-    # Add the full model graph 
-    writer.add_graph(policy, dummy_obs)
-    
-    # Extract the feature extractor (contains shared layers)
-    features_extractor = policy.features_extractor
-    writer.add_graph(features_extractor, dummy_obs)
-    
-    # Extract the MLP extractor (contains shared, policy and value networks)
-    # We need to first run feature extraction to get proper input shape
-    with torch.no_grad():
-        features = features_extractor(dummy_obs)
-        
-    mlp_extractor = policy.mlp_extractor
-    writer.add_graph(mlp_extractor, features)
-    
-    # Add separate graphs for policy and value networks
-    writer.add_graph(policy.action_net, features)
-    writer.add_graph(policy.value_net, features)
-    
-    # Add text description of architecture
-    writer.add_text("architecture/description", f"""
-    # PPO Network Architecture
-    
-    ## Shared Layers:
-    {model.policy_kwargs['net_arch']['shared']}
-    
-    ## Policy Layers (Actor):
-    {model.policy_kwargs['net_arch']['pi']}
-    
-    ## Value Layers (Critic):
-    {model.policy_kwargs['net_arch']['vf']}
-    
-    ## Activation:
-    {model.policy_kwargs['activation_fn'].__name__}
-    """)
-    
+    dummy_input = torch.zeros(1, model.observation_space.shape[0], device=model.device)
+
+    complete_model = PPO_net(model.policy)
+    writer.add_graph(complete_model, dummy_input)
     writer.close()
-    
-    print(f"Model visualization saved to {log_dir}")
-    print(f"Run 'tensorboard --logdir={log_dir}' to view")
-    
-    return policy.mlp_extractor  # Return for inspection
 
 def visualize_network_in_tensorboard(model, log_dir):
     writer = SummaryWriter(log_dir)
@@ -320,114 +252,10 @@ def visualize_network_in_tensorboard(model, log_dir):
     # Create dummy input based on your observation space
     dummy_input = torch.zeros(1, env.observation_space.shape[0], device=model.device)
    
+    print(model.policy)
     # Add graph to tensorboard
     writer.add_graph(model.policy, dummy_input)
     writer.close()
-   
-    print(f"Model graph added to TensorBoard. Run 'tensorboard --logdir={log_dir}' to view")
-
-def plot_network_architecture(model):
-    # Get the policy network from the PPO model
-    policy_net = model.policy
-   
-    # Create dummy input based on your observation space
-    dummy_input = torch.zeros(1, env.observation_space.shape[0], device=model.device)
-   
-    # Forward pass to build the computation graph
-    # You might need to adjust this depending on your exact policy implementation
-    _, values, _ = policy_net.forward(dummy_input)
-   
-    # Create visualization
-    dot = make_dot(values, params=dict(policy_net.named_parameters()))
-   
-    # Save the graph
-    dot.format = 'png'
-    dot.render('ppo_policy_network')
-   
-    print("Network visualization saved as 'ppo_policy_network.png'")
-
-def add_ppo_graph_to_tensorboard(model, log_dir):
-    """
-    Adds the PPO network architecture graph to TensorBoard.
-    
-    Args:
-        model: The trained PPO model instance
-        env: The environment (vectorized environment)
-        log_dir: Directory where TensorBoard logs are stored
-    """
-    
-    # Skip if not a PPO model
-    if not isinstance(model, PPO):
-        print("Model is not a PPO instance. Graph visualization skipped.")
-        return
-    
-    writer = SummaryWriter(os.path.join(log_dir, f"network_graph_{env_name}_{algo_name}_2"))
-    
-    # Get a dummy observation from the environment
-    try:
-        # Create a dummy environment to get observation shape
-        dummy_env = make_env(billiard_type)()
-        obs, _ = dummy_env.reset()
-        
-        # Convert observation to tensor
-        obs_tensor = torch.tensor(obs).float().unsqueeze(0).to(model.device)
-        
-        # set policy to evaluation mode before adding graph
-        model.policy.eval()
-
-        traced_complete = torch.jit.trace(model.policy, obs_tensor, check_trace=False)
-        # Try to add the graph to tensorboard
-        writer.add_graph(traced_complete, obs_tensor)
-        print(f"PPO network graph added to TensorBoard. View with: tensorboard --logdir {log_dir}")
-        
-        # set policy back to training mode
-        model.policy.train()
-
-    except Exception as e:
-        print(f"Failed to add graph to TensorBoard: {e}")
-        
-    writer.close()
-
-
-def add_labeled_ppo_graph_to_tensorboard(model, log_dir):
-    """
-    Adds a TensorBoard graph with explicit labels for actor and critic networks.
-    """
-    import torch
-    from torch.utils.tensorboard import SummaryWriter
-    
-    if not isinstance(model, PPO):
-        return
-        
-    writer = SummaryWriter(os.path.join(log_dir, f"labeled_network_{env_name}_{algo_name}"))
-    
-    # Create text descriptions of network components
-    writer.add_text("Network/Actor", f"Policy Network: {model.policy.mlp_extractor.policy_net}")
-    writer.add_text("Network/Critic", f"Value Network: {model.policy.mlp_extractor.value_net}")
-    # writer.add_text("Network/Shared", f"Shared Network: {model.policy.mlp_extractor.shared_net}")
-    
-    # Create parameter histograms for each network section
-    for name, param in model.policy.named_parameters():
-        if 'policy_net' in name:
-            writer.add_histogram(f"Actor/{name}", param.clone().cpu().data.numpy(), 0)
-        elif 'value_net' in name:
-            writer.add_histogram(f"Critic/{name}", param.clone().cpu().data.numpy(), 0)
-        else:
-            writer.add_histogram(f"Other/{name}", param.clone().cpu().data.numpy(), 0)
-    
-    # Try to add the standard graph visualization too
-    try:
-        dummy_env = make_env(billiard_type)()
-        obs, _ = dummy_env.reset()
-        obs_tensor = torch.tensor(obs).float().unsqueeze(0).to(model.device)
-        
-        with torch.no_grad():
-            writer.add_graph(model.policy, obs_tensor)
-    except Exception as e:
-        print(f"Standard graph visualization failed: {e}")
-    
-    writer.close()
-    print("Added labeled network visualizations to TensorBoard")
 
 # Define the environment creation function
 def make_env(billiard_type):
@@ -455,7 +283,7 @@ if __name__ == '__main__':
 
     algo_name = "PPO"         # SAC  PPO
     billiard_type = "BilliardTwo"   # BilliardThree  BilliardTwo
-    env_type = "Envtmp"
+    env_type = "Env"
     target_type = "DegenerateEigVal"  # Rank1  Rank1Trace0  DegenerateEigVal
 
     # BilliardTwo Rank1 -> 0.1

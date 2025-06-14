@@ -820,7 +820,7 @@ class BilliardBaseEnv(gym.Env):
         plot_data = self.field_func(dft_data)
         
         # Create figure and plot
-        plt.figure(figsize=(12, 10))
+        plt.figure(figsize=(10, 8))
         
         # Plot intensity
         plt.imshow(plot_data.T, 
@@ -829,13 +829,100 @@ class BilliardBaseEnv(gym.Env):
                 cmap='viridis', 
                 interpolation='bilinear')
 
-        plt.colorbar(label='Log Intensity log(|E|²)')
+        plt.xticks([-20, -10, 0, 10, 20])
+        plt.yticks([-10, 0, 10])
+        plt.colorbar(label='|E|', shrink=0.5)
         plt.tight_layout()
         plt.show()
 
         # Clean up
         sim.reset_meep()
 
+    def plot_steady_state_with_given_inputs(self, input_weights, scatter_positions=None, field_component=mp.Ez):
+
+        dft_resolution = 1
+
+        if scatter_positions is None:
+            scatter_positions = self.scatter_pos
+        
+        # Create geometry with scatterers
+        geometry = self._create_full_geometry(scatter_positions)
+        
+        # Setup simulation cell
+        cell_size = mp.Vector3(self.sx + 2 * self.waveguide_length, self.sy + 2 * self.metal_thickness)
+        pml_layers = [mp.PML(self.pml_thickness, direction=mp.X)]
+
+        input_weights = input_weights / np.linalg.norm(input_weights)
+        
+        # Create a simulation with sources using the eigenchannel weights
+        sources = []
+        for i, input_port in enumerate(self.source_ports):
+            # Create a source with amplitude and phase from eigenchannel weights
+            weight = input_weights[i]
+            # amplitude = np.abs(weight)
+            # phase = np.angle(weight)
+            
+            # Create source with proper amplitude and phase
+            source = mp.EigenModeSource(
+                mp.ContinuousSource(frequency=self.fsrc),
+                center=input_port["position"],
+                size=mp.Vector3(0, self.waveguide_width - self.source_length_diff),
+                eig_band=self.mode_num,
+                eig_parity=self.eig_parity,
+                amplitude=weight
+            )
+            sources.append(source)
+        
+        # Create simulation with these weighted sources
+        sim = mp.Simulation(
+            cell_size=cell_size,
+            boundary_layers=pml_layers,
+            geometry=geometry,
+            sources=sources,
+            resolution=self.resolution,
+            dimensions=2
+        )
+        
+        # Add DFT monitor for the entire cell
+        dft = sim.add_dft_fields([field_component], 
+                                self.fsrc, self.fsrc, 1,
+                                center=mp.Vector3(),
+                                size=cell_size,
+                                resolution=dft_resolution)
+        
+        # Run simulation until steady state
+        sim.run(until=self.n_runs)
+        
+        # Get the DFT field data
+        dft_data = sim.get_dft_array(dft, field_component, 0)
+        
+        # Get the grid dimensions for plotting
+        nx, ny = dft_data.shape
+        x = np.linspace(-cell_size.x/2, cell_size.x/2, nx)
+        y = np.linspace(-cell_size.y/2, cell_size.y/2, ny)
+        X, Y = np.meshgrid(x, y, indexing='ij')
+        
+        # Calculate intensity
+        plot_data = self.field_func(dft_data)
+        
+        # Create figure and plot
+        plt.figure(figsize=(10, 8))
+        
+        # Plot intensity
+        plt.imshow(plot_data.T, 
+                origin='lower', 
+                extent=[-cell_size.x/2, cell_size.x/2, -cell_size.y/2, cell_size.y/2],
+                cmap='viridis', 
+                interpolation='bilinear')
+
+        plt.xticks([-20, -10, 0, 10, 20])
+        plt.yticks([-10, 0, 10])
+        plt.colorbar(label='|E|', shrink=0.5)
+        plt.tight_layout()
+        plt.show()
+
+        # Clean up
+        sim.reset_meep()
     
     def plot_speckle_patterns(self, scatter_positions=None, field_component=mp.Ez):
         """
@@ -995,6 +1082,8 @@ class BilliardBaseEnv(gym.Env):
         
         # Add colorbar and labels
         plt.colorbar(label='Intensity')
+        plt.xticks([-20, -10, 0, 10, 20])
+        plt.yticks([-10, 0, 10])
         plt.tight_layout()
         
 
