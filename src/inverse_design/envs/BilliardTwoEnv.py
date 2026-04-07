@@ -8,9 +8,11 @@ from gymnasium.utils.env_checker import check_env
 try:
     # Try relative i,port first (when used as part of the package)
     from .base_env import BilliardBaseEnv
+    from .target_type import TargetType
 except ImportError:
     # Fall back to direct import (when run as a script)
     from base_env import BilliardBaseEnv
+    from target_type import TargetType
 
 # Suppress logging
 mp.verbosity(0)
@@ -22,7 +24,7 @@ mp.verbosity(0)
 
 
 class BilliardTwoEnv(BilliardBaseEnv):
-    def __init__(self, target_type="Rank1"):
+    def __init__(self, target_type: TargetType = TargetType.RANK1):
         super().__init__(target_type)
 
         # Define ports
@@ -121,16 +123,16 @@ class BilliardTwoEnv(BilliardBaseEnv):
         
         return geometry
        
-    def _calculate_reward(self, tm, target_type = "Rank1") -> tuple[np.float32, np.float32]:
+    def _calculate_reward(self, tm, target_type: TargetType = TargetType.RANK1) -> tuple[np.float32, np.float32]:
 
         match target_type:
-            case "Rank1":
+            case TargetType.RANK1:
                 # error = np.abs(tm[0][0] * tm[1][1] - tm[0][1] * tm[1][0])
                 singular_values = np.linalg.svd(np.array(tm), compute_uv=False)
                 ratio = singular_values[0] / np.sum(singular_values)
                 error = 1 - ratio
 
-            case "Rank1Trace0":
+            case TargetType.RANK1_TRACE0:
                 # norm = np.linalg.norm(tm, 'fro')
                 # if norm < 1e-10:  # Avoid division by zero
                 #     norm = 1.0
@@ -138,18 +140,18 @@ class BilliardTwoEnv(BilliardBaseEnv):
 
                 error = (np.abs(tm[0][0] * tm[1][1] - tm[0][1] * tm[1][0]) + np.abs(tm[0][0] + tm[1][1]) ** 2) / (np.linalg.norm(tm, 'fro')**2 + 1e-8)
 
-            case "DegenerateEigVal":
+            case TargetType.DEGENERATE_EIG_VAL:
                 # eigen_values = np.linalg.eigvals(tm)
                 # error = np.abs(eigen_values[0] / np.sum(eigen_values) - 0.5) + np.abs(eigen_values[1] / np.sum(eigen_values) - 0.5)
 
                 discriminant = (tm[0][0] - tm[1][1]) ** 2 + 4 * tm[0][1] * tm[1][0]
                 error = np.abs(discriminant) / (np.linalg.norm(tm, 'fro') ** 2 + 1e-8) # Calculate Frobenius norm for scaling, return normalized discriminant
 
-            case "FixedTarget":
+            case TargetType.FIXED_TARGET:
                 targetTM = np.array([[-2.28661274+0.54642883j, -7.33391126-0.31989986j], [4.91357518-2.36528964j,  3.44673878+3.01154595j]])
                 error = np.sum(np.abs(tm - targetTM))
 
-            case "DegenerateSingularVal":
+            case TargetType.DEGENERATE_SINGULAR_VAL:
                 singular_values = np.linalg.svd(tm, full_matrices=False, compute_uv=False)
                 error = np.abs(singular_values[0] - singular_values[1]) / (np.linalg.norm(tm, 'fro') + 1e-8)
 
@@ -518,6 +520,93 @@ class BilliardTwoEnv(BilliardBaseEnv):
 
         return save_data
 
+    def find_EP_sweep(self, scatter_pos=None, scatter_idx=0,
+                                position_range=(-0.1, 0.1), position_points=21,
+                                freq_range=(0.45, 0.55), freq_points=21,
+                                direction='x', save_path=None):
+
+        if save_path is None:
+            raise ValueError("save_path must be provided to save the TM data")
+
+        # Use current scatterer positions if none provided
+        if scatter_pos is None:
+            scatter_pos = self.scatter_pos.copy()
+        else:
+            scatter_pos = np.array(scatter_pos).copy()
+
+        # Create frequency and position delta arrays
+        freqs = np.linspace(freq_range[0], freq_range[1], freq_points)
+        position_deltas = np.linspace(position_range[0], position_range[1], position_points)
+
+        # Determine the actual index in the scatter_pos array based on direction
+        if direction.lower() == 'x':
+            pos_idx = scatter_idx * 2  # x-coordinate
+        elif direction.lower() == 'y':
+            pos_idx = scatter_idx * 2 + 1  # y-coordinate
+        else:
+            raise ValueError("Direction must be 'x' or 'y'")
+
+        # Initialize results array for storing TM data
+        tm_data = np.zeros((position_points, freq_points, 1), dtype=np.float32)
+
+        # Store original values to restore later
+        original_freq = self.fsrc
+        original_pos = scatter_pos[pos_idx]
+
+        # Make sure we're not using any loss/gain
+        original_loss = getattr(self, 'uniform_loss_factor', 0)
+        self.uniform_loss_factor = 0
+
+        # Set up progress tracking
+        total_iterations = position_points * freq_points
+        current_iteration = 0
+
+        try:
+            # Loop over position perturbations and frequencies
+            for i, delta in enumerate(position_deltas):
+                # Update position
+                scatter_pos[pos_idx] = original_pos + delta
+
+                # Make sure the perturbed position stays within bounds [-1, 1]
+                scatter_pos[pos_idx] = np.clip(scatter_pos[pos_idx], -1, 1)
+
+                for j, freq in enumerate(freqs):
+                    # Update frequency
+                    self.fsrc = freq
+
+                    # Calculate TM with current settings
+                    tm = self._calculate_normalized_subSM(scatter_pos, matrix_type="TM", visualize=False)
+                    eigenvalues, _ = np.linalg.eig(tm)
+                    # Store the TM eigenvalues diff
+                    tm_data[i, j] = np.abs(eigenvalues[0] - eigenvalues[1])
+
+                    # Update progress
+                    current_iteration += 1
+                    if current_iteration % 5 == 0 or current_iteration == total_iterations:
+                        print(f"Progress: {current_iteration}/{total_iterations} iterations completed")
+
+        finally:
+            # Restore original values
+            self.fsrc = original_freq
+            scatter_pos[pos_idx] = original_pos
+            self.uniform_loss_factor = original_loss
+
+        # Save data
+        save_data = {
+            'freqs': freqs,
+            'position_deltas': position_deltas,
+            'tm_data': tm_data,
+            'scatter_idx': scatter_idx,
+            'direction': direction,
+            'original_position': original_pos
+        }
+        
+
+        np.savez(save_path + 'tm_diff_sweep.npz', **save_data)
+        print(f"TM data saved to {save_path}")
+
+        return save_data
+    
     def get_eigenvectors_degenerate_case(self, scatter_pos=None):
         """
         Extracts the eigenvector and generalized eigenvector for a 2x2 matrix 
@@ -592,10 +681,11 @@ class BilliardTwoEnv(BilliardBaseEnv):
             
         # Calculate the transmission matrix
         tm = self._calculate_normalized_subSM(scatter_pos, matrix_type="TM", visualize=False)
-        
+        tm = tm.T
+
         # Get eigenvalues and eigenvectors from numpy
         eigenvalues, eigenvectors = np.linalg.eig(tm)
-        
+        print('eigenvalue: ', eigenvalues)
         # Use the average as the single eigenvalue
         eigenvalue = np.mean(eigenvalues)
         eigenvector = eigenvectors[:, 0]
@@ -612,9 +702,12 @@ class BilliardTwoEnv(BilliardBaseEnv):
         
         P = np.column_stack([eigenvector, generalized_eigenvector])
 
-        C01 = np.abs(generalized_eigenvector.conj().T @ tm @ eigenvector)**2
-        C10 = np.abs(eigenvector.conj().T @ tm @ generalized_eigenvector)**2
-        print(C01, C10)
+        generalized_eigenvector = generalized_eigenvector/np.linalg.norm(generalized_eigenvector)
+        C00 = eigenvector.conj().T @ tm @ eigenvector
+        C01 = generalized_eigenvector.conj().T @ tm @ eigenvector
+        C10 = eigenvector.conj().T @ tm @ generalized_eigenvector
+        C11 = generalized_eigenvector.conj().T @ tm @ generalized_eigenvector
+        print('CONVERSION: ', C00, C01, C10, C11)
 
         return P
 

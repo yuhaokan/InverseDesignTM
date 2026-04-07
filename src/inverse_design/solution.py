@@ -6,13 +6,12 @@ from stable_baselines3.common.monitor import Monitor
 from stable_baselines3.common.vec_env import SubprocVecEnv
 from stable_baselines3.common.utils import get_linear_fn
 import torch
-from torchviz import make_dot
 from torch.utils.tensorboard import SummaryWriter
 import inspect
 import torch.nn as nn
 # import argparse
 
-from envs import BilliardTwoEnv, BilliardThreeEnv
+from envs import BilliardTwoEnv, BilliardThreeEnv, TargetType
 
 import os
 # Get the directory where the current script is located
@@ -284,13 +283,13 @@ if __name__ == '__main__':
     algo_name = "PPO"         # SAC  PPO
     billiard_type = "BilliardTwo"   # BilliardThree  BilliardTwo
     env_type = "Env"
-    target_type = "DegenerateEigVal"  # Rank1  Rank1Trace0  DegenerateEigVal
+    target_type = TargetType.DEGENERATE_EIG_VAL  # Rank1  Rank1Trace0  DegenerateEigVal
 
     # BilliardTwo Rank1 -> 0.1
     # BilliardThree Rank1 -> 0.02
     error_threshold = 0.02  
 
-    env_name = billiard_type + "_" + env_type + "_" + target_type
+    env_name = billiard_type + "_" + env_type + "_" + target_type.value
 
     ## without parallel computing
     # env = BilliardTwoEnv()

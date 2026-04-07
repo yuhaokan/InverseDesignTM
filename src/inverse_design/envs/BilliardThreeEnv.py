@@ -5,15 +5,17 @@ from gymnasium.utils.env_checker import check_env
 try:
     # Try relative i,port first (when used as part of the package)
     from .base_env import BilliardBaseEnv
+    from .target_type import TargetType
 except ImportError:
     # Fall back to direct import (when run as a script)
     from base_env import BilliardBaseEnv
+    from target_type import TargetType
 
 # Suppress logging
 mp.verbosity(0)
 
 class BilliardThreeEnv(BilliardBaseEnv):
-    def __init__(self, target_type="Rank1"):
+    def __init__(self, target_type: TargetType = TargetType.RANK1):
         super().__init__(target_type)
 
         # overwrite system size
@@ -142,15 +144,14 @@ class BilliardThreeEnv(BilliardBaseEnv):
         
         return geometry
         
-    def _calculate_reward(self, tm, target_type = "Rank1") -> tuple[np.float32, np.float32]:
+    def _calculate_reward(self, tm, target_type: TargetType = TargetType.RANK1) -> tuple[np.float32, np.float32]:
         """
         Calculate reward based on how close the transmission matrix is to being rank-1.
         For a rank-1 matrix, the singular values beyond the first one should be zero.
         """
-
         match target_type:
 
-            case "Rank1":
+            case TargetType.RANK1:
                 # Convert the transmission matrix to a numpy array
                 tm_array = np.array(tm)
                 

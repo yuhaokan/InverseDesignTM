@@ -7,8 +7,13 @@ from matplotlib.patches import Rectangle, Circle
 
 from gymnasium import spaces
 
+try:
+    from .target_type import TargetType
+except ImportError:
+    from target_type import TargetType
+
 class BilliardBaseEnv(gym.Env):
-    def __init__(self, target_type="Rank1"):
+    def __init__(self, target_type: TargetType = TargetType.RANK1):
         super().__init__()
 
         self.target_type = target_type
@@ -915,8 +920,9 @@ class BilliardBaseEnv(gym.Env):
                 cmap='viridis', 
                 interpolation='bilinear')
 
-        plt.xticks([-20, -10, 0, 10, 20])
+        plt.xticks([-16, 0, 16])
         plt.yticks([-10, 0, 10])
+        plt.xlim([-16, 16])
         plt.colorbar(label='|E|', shrink=0.5)
         plt.tight_layout()
         plt.show()
