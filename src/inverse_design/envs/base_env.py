@@ -3,7 +3,6 @@ import matplotlib.pyplot as plt
 import numpy as np
 import meep as mp
 import typing
-from matplotlib.patches import Rectangle, Circle
 
 from gymnasium import spaces
 

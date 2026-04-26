@@ -11,9 +11,9 @@ def load_best_pos(best_pos_file_name, save_path=position_dir):
     best_pos_path = os.path.join(save_path, best_pos_file_name)
     if os.path.exists(best_pos_path):
         saved_dict = np.load(best_pos_path, allow_pickle=True).item()
-        return saved_dict['best_pos'], saved_dict['best_reward']
-    return None, None
+        return saved_dict['best_pos']
+    return None
 
 # python -m inverse_design.utils.load_pos
 if __name__ == '__main__':
-    print(load_best_pos('best_pos_BilliardTwo_Env_Rank1_PPO.npy'))
+    print(load_best_pos('best_pos_BilliardTwo_Env12_Rank1_PPO_2.npy'))
