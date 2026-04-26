@@ -1,305 +1,102 @@
+import argparse
 import numpy as np
-from stable_baselines3 import PPO, SAC
-# from stable_baselines3.common.callbacks import StopTrainingOnNoModelImprovement, StopTrainingOnRewardThreshold, EvalCallback
-from stable_baselines3.common.monitor import Monitor
-# from stable_baselines3.common.vec_env import DummyVecEnv
 from stable_baselines3.common.vec_env import SubprocVecEnv
 from stable_baselines3.common.utils import get_linear_fn
-import torch
-from torch.utils.tensorboard import SummaryWriter
-import inspect
-import torch.nn as nn
-# import argparse
-
-from envs import BilliardTwoEnv, BilliardThreeEnv, TargetType
-
 import os
-# Get the directory where the current script is located
-current_dir = os.path.dirname(os.path.abspath(__file__))
 
-# Create directories relative to the script location
-model_dir = os.path.join(current_dir, "models")
-log_dir = os.path.join(current_dir, "logs")
-position_dir = os.path.join(current_dir, "positions")
-
-os.makedirs(position_dir, exist_ok=True)
-os.makedirs(log_dir, exist_ok=True)
-
-'''
-tensorboard --logdir ./logs
-python load_pos.py
-'''
-
-from stable_baselines3.common.callbacks import BaseCallback
-    
-class TensorboardStepCallbackV2(BaseCallback):
-    def __init__(self, log_freq=32, verbose=0):
-        super().__init__(verbose)
-        self.log_freq = log_freq
-        self.last_log_step = 0
-        
-        # Track best reward since last logging
-        self.max_reward_since_last_log = float('-inf')
-        self.mean_reward_accumulator = []
-        
-    def _on_step(self) -> bool:
-        # Get current rewards
-        step_rewards = self.locals.get('rewards', [])
-        
-        # Always track the maximum reward and accumulate for mean, even if we don't log yet
-        if len(step_rewards) > 0:
-            current_max = np.max(step_rewards)
-            self.max_reward_since_last_log = max(self.max_reward_since_last_log, current_max)
-            self.mean_reward_accumulator.extend(step_rewards)
-            
-        # Only log at specified intervals
-        if self.num_timesteps - self.last_log_step >= self.log_freq:
-            # Log standard metrics from the model logger
-            loss_dict = self.model.logger.name_to_value
-            for key, value in loss_dict.items():
-                self.logger.record(key, value)
-            
-            # Log our tracked metrics
-            if self.max_reward_since_last_log > float('-inf'):
-                self.logger.record("rewards/tracked_max_reward", self.max_reward_since_last_log)
-            
-            if len(self.mean_reward_accumulator) > 0:
-                self.logger.record("rewards/tracked_mean_reward", np.mean(self.mean_reward_accumulator))
-                
-            # Log current episode stats if available
-            if len(step_rewards) > 0:
-                self.logger.record("rewards/current_step_reward_mean", np.mean(step_rewards))
-                self.logger.record("rewards/current_step_reward_max", np.max(step_rewards))
-            
-            # Make sure to dump the logs
-            self.logger.dump(self.num_timesteps)
-            
-            # Reset our trackers
-            self.last_log_step = self.num_timesteps
-            self.max_reward_since_last_log = float('-inf')
-            self.mean_reward_accumulator = []
-            
-        return True
-
-class SaveBestPosCallback(BaseCallback):
-    def __init__(self, error_threshold=0.5, save_freq=100, save_path=position_dir, verbose=0):
-        super().__init__(verbose)
-        self.error_threshold = error_threshold
-        self.save_freq = save_freq
-        self.save_path = save_path
-        self.best_pos = None
-        self.best_error = float('inf')
-
-    def _on_step(self):
-        # Check all environments in the batch
-        for _, info in enumerate(self.locals['infos']):
-            error = info.get('error', float('inf'))
-            current_pos = info.get('scatter_pos')
-            
-            # Update best position if we found a better error
-            if error < self.best_error and current_pos is not None:
-                self.best_error = error
-                self.best_pos = current_pos.copy()
-                self._save_best_pos()
-                print(f"New best error: {self.best_error:.6f}")
-
-        # Stop if we find a satisfactory solution
-        if self.best_error < self.error_threshold:
-            print(f"Found solution below threshold! Error: {self.best_error:.6f}")
-            return False
-
-        return True
-
-    def _save_best_pos(self):
-        """Save the best position found so far"""
-        save_dict = {
-            'best_pos': self.best_pos,
-            'best_error': self.best_error,
-            'n_calls': self.n_calls
-        }
-        np.save(os.path.join(self.save_path, 'best_pos_' + env_name + '_' + algo_name + '.npy'), save_dict)
+from .enums import TargetType, AlgoType, BilliardType
+from .callbacks import TensorboardStepCallback, SaveBestPosCallback
+from .utils import create_model, make_env, NetworkVisualizer
 
 
-def train(env_name, algo_name, error_threshold):
+def _get_dirs():
+    """Return project output directories, creating them if needed."""
+    base = os.path.dirname(os.path.abspath(__file__))
+    dirs = {
+        "log": os.path.join(base, "logs"),
+        "position": os.path.join(base, "positions"),
+    }
+    for d in dirs.values():
+        os.makedirs(d, exist_ok=True)
+    return dirs
 
-    # Linear learning rate decay
+
+DIRS = _get_dirs()
+log_dir = DIRS["log"]
+position_dir = DIRS["position"]
+
+
+def train(env, env_name, algo_name, error_threshold):
+    """Train an RL agent to optimize scatterer positions.
+
+    Configures PPO or SAC with a linear learning rate schedule, runs training
+    with TensorBoard logging and best-position checkpointing, and stops early
+    if the TM error drops below the threshold.
+
+    Args:
+        env: Vectorized gymnasium environment.
+        env_name: Identifier string used for log and checkpoint filenames.
+        algo_name: AlgoType enum selecting the RL algorithm.
+        error_threshold: Training stops when TM error falls below this value.
+    """
+
+    # Linearly decay learning rate from 3e-4 to 1e-5 over the first 80% of total_timesteps,
+    # then hold at 1e-5 for the remaining 20%
     lr_schedule = get_linear_fn(start=3e-4, end=1e-5, end_fraction=0.8)
-
-    model = None
-
-    if algo_name == "PPO":
-        policy_kwargs_PPO = dict( # this policy is for PPO
-            net_arch=dict(
-                shared=[256, 128],  # shared layer
-                pi=[256, 256],      # policy layer
-                vf=[256, 256]       # value layer
-            ),
-            activation_fn=torch.nn.ReLU  # ReLU often works better than tanh for physics problems
-        )
-
-        # Initialize the model
-        model = PPO('MlpPolicy', env, verbose=1, device='cpu', 
-                    learning_rate=lr_schedule,
-                    policy_kwargs=policy_kwargs_PPO,  # Larger policy network
-                    n_steps=128,    # The number of steps to run for each environment per update, 
-                                    # rollout buffer size is n_steps * n_envs, 
-                                    # n_steps = self.max_step // 8, or even smaller, like self.max_step // 16
-                    batch_size=256, 
-                    n_epochs=8,    # Number of epoch the algo will iterate through the entire collected batch of experience during each training update
-                    clip_range=0.2,
-                    gamma=0.999, tensorboard_log=log_dir)
-
-        # visualize_complete_ppo_network(model, os.path.join(log_dir, "model_architecture0"))
-
-    if algo_name == "SAC":
-        policy_kwargs_SAC = dict( # this policy is for SAC,  SAC uses Q-functions (critics) instead of value functions, so need to use the qf key.
-            net_arch=dict(
-                pi=[256, 256],  # Actor/policy network architecture
-                qf=[256, 256]   # Critic/Q-function network architecture
-            ),
-            activation_fn=torch.nn.ReLU
-        )
-
-        # With train_freq=1, gradient_steps=5, and n_envs=4:
-        # Each environment step collects 4 new transitions (one from each parallel environment)
-        # After collecting these 4 transitions, the agent performs 5 separate gradient updates
-        # Each gradient update uses a randomly sampled batch from the entire replay buffer (not just the 4 new transitions)
-        model = SAC('MlpPolicy', env, verbose=1, device='cpu', 
-                learning_rate=lr_schedule,
-                policy_kwargs=policy_kwargs_SAC,
-                batch_size=256,
-                buffer_size=100000,  # Experience replay buffer size
-                train_freq=4,
-                gradient_steps=8,
-                learning_starts=512,  # Add this to collect enough diverse experiences before learning
-                gamma=0.999,
-                tau=0.005,  # For soft target updates
-                ent_coef='auto',  # Automatic entropy tuning
-                tensorboard_log=log_dir)
+    model = create_model(algo_name, env, lr_schedule, log_dir)
 
     # Create callback
     saveBestPosCallback = SaveBestPosCallback(
         error_threshold=error_threshold,
-        save_freq=1000,  # Save checkpoint every 1000 steps
-        verbose=1
+        save_path=position_dir,
+        save_name=f"best_pos_{env_name}_{algo_name.value}",
     )
-    tensorboardStepCallback = TensorboardStepCallbackV2(log_freq=32)
+    tensorboardStepCallback = TensorboardStepCallback(log_freq=8)
     try:
         # Train until we find a satisfactory solution
         model.learn(
             total_timesteps=1000000,  # Maximum steps if solution isn't found
             callback=[saveBestPosCallback, tensorboardStepCallback],
-            tb_log_name=f"{env_name}_{algo_name}",
+            tb_log_name=f"{env_name}_{algo_name.value}",
             log_interval=1
         )
     except Exception as e:
         print(f"Training stopped: {e}")
    
-    if saveBestPosCallback.best_error < error_threshold:
-        print("Successfully found solution:")
-        print(f"Best error: {saveBestPosCallback.best_error}")
-        print(f"Best position: {saveBestPosCallback.best_pos}")
-        return saveBestPosCallback.best_pos
+    if saveBestPosCallback.best_reward > -error_threshold:
+        print(f"Found solution! Best reward: {saveBestPosCallback.best_reward:.6f}")
     else:
-        print(f"Could not find solution below threshold. Best error: {saveBestPosCallback.best_error}")
-        return saveBestPosCallback.best_pos  # Return best found even if not below threshold
-
-def visualize_complete_ppo_network(model, log_dir):
-    print(inspect.getsource(model.policy.forward))
-
-    class PPO_net(nn.Module):
-        """Module that shows both actor and critic pathways with proper connections"""
-        def __init__(self, policy):
-            super().__init__()
-            # Feature extraction layer
-            self.features_extractor = policy.features_extractor
-            
-            # Actor components
-            self.policy_net = policy.mlp_extractor.policy_net
-            self.action_net = policy.action_net
-            
-            # Critic components
-            self.value_net_mlp = policy.mlp_extractor.value_net
-            self.value_head = policy.value_net
-            
-        def forward(self, obs):
-            # Extract features (shared step)
-            features = self.features_extractor(obs)
-            
-            # Actor pathway
-            pi_latent = self.policy_net(features)
-            actions = self.action_net(pi_latent)
-            
-            # Critic pathway
-            vf_latent = self.value_net_mlp(features)
-            values = self.value_head(vf_latent)
-            
-            # Return both outputs to ensure both paths appear in the graph
-            return actions, values
-
-    # Create visualization
-    writer = SummaryWriter(log_dir)
-    dummy_input = torch.zeros(1, model.observation_space.shape[0], device=model.device)
-
-    complete_model = PPO_net(model.policy)
-    writer.add_graph(complete_model, dummy_input)
-    writer.close()
-
-def visualize_network_in_tensorboard(model, log_dir):
-    writer = SummaryWriter(log_dir)
-   
-    # Create dummy input based on your observation space
-    dummy_input = torch.zeros(1, env.observation_space.shape[0], device=model.device)
-   
-    print(model.policy)
-    # Add graph to tensorboard
-    writer.add_graph(model.policy, dummy_input)
-    writer.close()
-
-# Define the environment creation function
-def make_env(billiard_type):
-    def _init():
-        if billiard_type == 'BilliardThree':
-            env = BilliardThreeEnv(target_type)
-        else:
-            env = BilliardTwoEnv(target_type)
-        env = Monitor(env, log_dir)
-        return env
-    return _init
+        print(f"Could not find solution below threshold. Best reward: {saveBestPosCallback.best_reward:.6f}")
 
 if __name__ == '__main__':
-    # Parse command line inputs
-    # parser = argparse.ArgumentParser(description='Train or test model.')
-    # parser.add_argument('gymenv', help='Gymnasium environment i.e. Humanoid-v4')
-    # parser.add_argument('sb3_algo', help='StableBaseline3 RL algorithm i.e. A2C, DDPG, DQN, PPO, SAC, TD3')    
-    # parser.add_argument('--test', help='Test mode', action='store_true')
-    # args = parser.parse_args()
+    parser = argparse.ArgumentParser(description='Train RL agent for inverse design of transmission matrices.')
+    parser.add_argument('--algo', type=str, default='PPO', choices=[a.value for a in AlgoType],
+                        help='RL algorithm (default: PPO)')
+    parser.add_argument('--billiard', type=str, default='BilliardTwo', choices=[b.value for b in BilliardType],
+                        help='Billiard cavity type (default: BilliardTwo)')
+    parser.add_argument('--target', type=str, default='Rank1', choices=[t.value for t in TargetType],
+                        help='Target type for reward objective (default: Rank1)')
+    parser.add_argument('--error-threshold', type=float, default=0.02,
+                        help='Early stopping error threshold (default: 0.02)')
+    parser.add_argument('--n-envs', type=int, default=4,
+                        help='Number of parallel environments (default: 4)')
+    parser.add_argument('--visualize', action='store_true',
+                        help='Visualize the network architecture and exit (no training)')
+    args = parser.parse_args()
 
-    # Dynamic way to import algorithm. For example, passing in DQN is equivalent to hardcoding:
-    # from stable_baselines3 import DQN
-    # sb3_class = getattr(stable_baselines3, args.sb3_algo)
+    algo_name = AlgoType(args.algo)
+    billiard_type = BilliardType(args.billiard)
+    target_type = TargetType(args.target)
+    error_threshold = args.error_threshold
 
+    env_name = f"{billiard_type.value}_Env_{target_type.value}"
 
-    algo_name = "PPO"         # SAC  PPO
-    billiard_type = "BilliardTwo"   # BilliardThree  BilliardTwo
-    env_type = "Env"
-    target_type = TargetType.DEGENERATE_EIG_VAL  # Rank1  Rank1Trace0  DegenerateEigVal
+    env = SubprocVecEnv([make_env(billiard_type, target_type, log_dir) for _ in range(args.n_envs)])
 
-    # BilliardTwo Rank1 -> 0.1
-    # BilliardThree Rank1 -> 0.02
-    error_threshold = 0.02  
-
-    env_name = billiard_type + "_" + env_type + "_" + target_type.value
-
-    ## without parallel computing
-    # env = BilliardTwoEnv()
-    # env = Monitor(env, log_dir)
-    # env = DummyVecEnv([lambda: env])
-
-
-    ## Create multiple environments in parallel
-    # n_envs is the number of parallel environments you want to run
-    n_envs = 1  # You can adjust this number based on your CPU cores
-    env = SubprocVecEnv([make_env(billiard_type) for _ in range(n_envs)])
-
-    train(env_name, algo_name, error_threshold)
+    if args.visualize:
+        lr_schedule = get_linear_fn(start=3e-4, end=1e-5, end_fraction=0.8)
+        model = create_model(algo_name, env, lr_schedule, log_dir)
+        NetworkVisualizer.visualize_ppo_network(model, os.path.join(log_dir, "network_graph"))
+        print(f"Network graph saved to {log_dir}/network_graph")
+    else:
+        train(env, env_name, algo_name, error_threshold)
