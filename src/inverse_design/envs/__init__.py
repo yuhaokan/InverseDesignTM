@@ -1,4 +1,2 @@
-from .BilliardTwoEnv import BilliardTwoEnv
-from .BilliardThreeEnv import BilliardThreeEnv
-from .target_type import TargetType
-# print('envs was called')
+from .billiard_two_env import BilliardTwoEnv
+from .billiard_three_env import BilliardThreeEnv

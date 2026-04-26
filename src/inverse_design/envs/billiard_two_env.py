@@ -1,27 +1,12 @@
 import numpy as np
 import meep as mp
 import matplotlib.pyplot as plt
-# from gymnasium.envs.registration import register
-from gymnasium.utils.env_checker import check_env
-# from stable_baselines3.common.vec_env import DummyVecEnv
 
-try:
-    # Try relative i,port first (when used as part of the package)
-    from .base_env import BilliardBaseEnv
-    from .target_type import TargetType
-except ImportError:
-    # Fall back to direct import (when run as a script)
-    from base_env import BilliardBaseEnv
-    from target_type import TargetType
+from .base_env import BilliardBaseEnv
+from ..enums import TargetType, MatrixType
 
 # Suppress logging
 mp.verbosity(0)
-
-# register(
-#     id='BilliardTwoEnv',                         
-#     entry_point='BilliardTwoEnv:BilliardTwoEnv',        # module_name:class_name
-# )
-
 
 class BilliardTwoEnv(BilliardBaseEnv):
     def __init__(self, target_type: TargetType = TargetType.RANK1):
@@ -29,18 +14,18 @@ class BilliardTwoEnv(BilliardBaseEnv):
 
         # Define ports
         self.source_ports = [
-            {"name": "left_top", "position": mp.Vector3(-self.sx/2-self.source_billiard_distance, self.waveguide_offset), "direction": mp.X},
-            {"name": "left_bottom", "position": mp.Vector3(-self.sx/2-self.source_billiard_distance, -self.waveguide_offset), "direction": mp.X}
+            {"name": "left_top", "position": mp.Vector3(-self.sx/2-self.source_billiard_distance, self.waveguide_offset)},
+            {"name": "left_bottom", "position": mp.Vector3(-self.sx/2-self.source_billiard_distance, -self.waveguide_offset)}
         ]
 
         self.output_ports = [
-            {"name": "right_top", "position": mp.Vector3(self.sx/2+self.source_billiard_distance, self.waveguide_offset), "direction": mp.X},
-            {"name": "right_bottom", "position": mp.Vector3(self.sx/2+self.source_billiard_distance, -self.waveguide_offset), "direction": mp.X}
+            {"name": "right_top", "position": mp.Vector3(self.sx/2+self.source_billiard_distance, self.waveguide_offset)},
+            {"name": "right_bottom", "position": mp.Vector3(self.sx/2+self.source_billiard_distance, -self.waveguide_offset)}
         ]
 
         self.reflection_ports = [
-            {"name": "left_top", "position": mp.Vector3(-self.sx/2-self.source_billiard_distance/2, self.waveguide_offset), "direction": mp.X},
-            {"name": "left_bottom", "position": mp.Vector3(-self.sx/2-self.source_billiard_distance/2, -self.waveguide_offset), "direction": mp.X}
+            {"name": "left_top", "position": mp.Vector3(-self.sx/2-self.source_billiard_distance/2, self.waveguide_offset)},
+            {"name": "left_bottom", "position": mp.Vector3(-self.sx/2-self.source_billiard_distance/2, -self.waveguide_offset)}
         ]
 
     def _create_base_geometry(self):
@@ -123,9 +108,9 @@ class BilliardTwoEnv(BilliardBaseEnv):
         
         return geometry
        
-    def _calculate_reward(self, tm, target_type: TargetType = TargetType.RANK1) -> tuple[np.float32, np.float32]:
+    def _calculate_reward(self, tm) -> tuple[np.float32, np.float32]:
 
-        match target_type:
+        match self.target_type:
             case TargetType.RANK1:
                 # error = np.abs(tm[0][0] * tm[1][1] - tm[0][1] * tm[1][0])
                 singular_values = np.linalg.svd(np.array(tm), compute_uv=False)
@@ -213,7 +198,7 @@ class BilliardTwoEnv(BilliardBaseEnv):
                     self.fsrc = freq
                     
                     # Calculate TM with current settings
-                    tm = self._calculate_subSM(scatter_pos, matrix_type="TM", visualize=False)
+                    tm = self._calculate_subSM(scatter_pos, matrix_type=MatrixType.TM)
                     
                     # Calculate eigenvectors through eigendecomposition
                     eigenvalues, eigenvectors = np.linalg.eig(tm)
@@ -290,7 +275,6 @@ class BilliardTwoEnv(BilliardBaseEnv):
         
         return fig, ax, coalescence_data
 
-
     def calculate_eigenvector_coalescence_position_sweep(self, scatter_pos=None, scatter_idx=0,
                                                         position_range=(-0.1, 0.1), position_points=21,
                                                         freq_range=(0.45, 0.55), freq_points=21,
@@ -360,7 +344,7 @@ class BilliardTwoEnv(BilliardBaseEnv):
                     self.fsrc = freq
 
                     # Calculate TM with current settings
-                    tm = self._calculate_subSM(scatter_pos, matrix_type="TM", visualize=False)
+                    tm = self._calculate_subSM(scatter_pos, matrix_type=MatrixType.TM)
 
                     # Calculate eigenvectors through eigendecomposition
                     eigenvalues, eigenvectors = np.linalg.eig(tm)
@@ -488,7 +472,7 @@ class BilliardTwoEnv(BilliardBaseEnv):
                     self.fsrc = freq
 
                     # Calculate TM with current settings
-                    tm = self._calculate_normalized_subSM(scatter_pos, matrix_type="TM", visualize=False)
+                    tm = self._calculate_normalized_subSM(scatter_pos, matrix_type=MatrixType.TM)
                     
                     # Store the TM
                     tm_data[i, j] = tm
@@ -575,7 +559,7 @@ class BilliardTwoEnv(BilliardBaseEnv):
                     self.fsrc = freq
 
                     # Calculate TM with current settings
-                    tm = self._calculate_normalized_subSM(scatter_pos, matrix_type="TM", visualize=False)
+                    tm = self._calculate_normalized_subSM(scatter_pos, matrix_type=MatrixType.TM)
                     eigenvalues, _ = np.linalg.eig(tm)
                     # Store the TM eigenvalues diff
                     tm_data[i, j] = np.abs(eigenvalues[0] - eigenvalues[1])
@@ -623,7 +607,7 @@ class BilliardTwoEnv(BilliardBaseEnv):
             scatter_pos = self.scatter_pos
             
         # Calculate the transmission matrix
-        tm = self._calculate_normalized_subSM(scatter_pos, matrix_type="TM", visualize=False)
+        tm = self._calculate_normalized_subSM(scatter_pos, matrix_type=MatrixType.TM)
         
         # Get eigenvalues and eigenvectors from numpy
         eigenvalues, eigenvectors = np.linalg.eig(tm)
@@ -680,7 +664,7 @@ class BilliardTwoEnv(BilliardBaseEnv):
             scatter_pos = self.scatter_pos
             
         # Calculate the transmission matrix
-        tm = self._calculate_normalized_subSM(scatter_pos, matrix_type="TM", visualize=False)
+        tm = self._calculate_normalized_subSM(scatter_pos, matrix_type=MatrixType.TM)
         tm = tm.T
 
         # Get eigenvalues and eigenvectors from numpy
@@ -727,7 +711,7 @@ class BilliardTwoEnv(BilliardBaseEnv):
             scatter_pos = self.scatter_pos
             
         # Calculate the transmission matrix
-        tm = self._calculate_normalized_subSM(scatter_pos, matrix_type="TM", visualize=False)
+        tm = self._calculate_normalized_subSM(scatter_pos, matrix_type=MatrixType.TM)
         
         # P for best_pos_BilliardTwo_Env12_DegenerateEigVal_PPO_8
         # P = np.array([[  0.89466086+0j,             26.24562364+92.36013569j ],
@@ -740,29 +724,21 @@ class BilliardTwoEnv(BilliardBaseEnv):
 
     
 if __name__ == "__main__":
+    # from gymnasium.utils.env_checker import check_env
+
     env = BilliardTwoEnv()
-    # # env = gym.make('MyEnv-v0')
     env.reset(seed=55)
-    # print("check env begin")
+
     # check_env(env)
     # print("check env end")
 
-    # normalized_rm = env._calculate_normalized_subSM(env.scatter_pos, matrix_type="RM", visualize=False)
-    # normalized_tm = env._calculate_normalized_subSM(env.scatter_pos, matrix_type="TM", visualize=False)
-    # print(normalized_rm @ np.conj(normalized_rm).T)
-    # print(normalized_tm @ np.conj(normalized_tm).T)
+    # normalized_rm = env._calculate_normalized_subSM(env.scatter_pos, matrix_type=MatrixType.RM)
+    # normalized_tm = env._calculate_normalized_subSM(env.scatter_pos, matrix_type=MatrixType.TM)
     # print(normalized_rm @ np.conj(normalized_rm).T + normalized_tm @ np.conj(normalized_tm).T)
 
-    tm_sample = env._calculate_subSM(env.scatter_pos, matrix_type="RM", visualize=False)
-    # print(tm_sample)
-    # print(env._calculate_reward(tm_sample))
-
-    # env.render()
+    env.render(save_path='billiard_two_cavity.png')
 
     # print(env.unwrapped.get_state())
-
-    # env2 = DummyVecEnv([lambda: BilliardTwoEnv()])
-    # print(env2.get_attr('n_scatterers'))
     
     # # Test episode loop
     # episodes = 2
@@ -771,14 +747,11 @@ if __name__ == "__main__":
     #     done = False
     #     truncated = False
     #     total_reward = 0
-    #
+    
     #     print(f"\nEpisode {episode + 1}")
     #     while not (done or truncated):
     #         action = env.action_space.sample()  # Replace with your action selection
     #         obs, reward, done, truncated, info = env.step(action)
     #         total_reward += reward
-    #
-    #         if episode == 0:  # Render only first episode
-    #             env.render()
-    #
+    
     #     print(f"Episode {episode + 1} finished with reward: {total_reward}")

@@ -35,14 +35,12 @@ class SingleWaveguideEnv():
         # Define ports
         self.source_port = {
             "name": "input_port",
-            "position": mp.Vector3(-self.waveguide_length / 2 + self.pml_thickness + self.source_pml_distance, 0),
-            "direction": mp.X
+            "position": mp.Vector3(-self.waveguide_length / 2 + self.pml_thickness + self.source_pml_distance, 0)
         }
 
         self.output_port = {
             "name": "output_port",
-            "position": mp.Vector3(self.waveguide_length / 2 - self.pml_thickness - self.source_pml_distance, 0),
-            "direction": mp.X
+            "position": mp.Vector3(self.waveguide_length / 2 - self.pml_thickness - self.source_pml_distance, 0)
         }
 
     def _create_geometry(self):
@@ -105,12 +103,6 @@ class SingleWaveguideEnv():
                 size=mp.Vector3(0, self.waveguide_width - 0.2)
             )
         )
-
-        # if visualize:
-        #     plt.figure()
-        #     sim.plot2D(plot_eps_flag=True)
-        #     plt.title("Waveguide Structure")
-        #     plt.show()
 
         # Run simulation
         sim.run(until=self.n_runs)
@@ -224,6 +216,5 @@ if __name__ == "__main__":
     # Example usage:
     waveguide = SingleWaveguideEnv()
     transmission = waveguide.run_simulation(visualize=True)
-    # print(f"Transmission: {transmission}")
 
     # waveguide.get_transmission_spectrum(freq_min=0.4998, freq_max=0.5002, freq_points=51)

@@ -7,100 +7,83 @@ from matplotlib.patches import Rectangle, Circle
 
 from gymnasium import spaces
 
-try:
-    from .target_type import TargetType
-except ImportError:
-    from target_type import TargetType
+from ..enums import TargetType, MatrixType
 
 class BilliardBaseEnv(gym.Env):
     def __init__(self, target_type: TargetType = TargetType.RANK1):
         super().__init__()
 
-        self.target_type = target_type
+        self.target_type = target_type  # reward objective (e.g. RANK1, DEGENERATE_EIGVAL)
 
-        # Common initialization parameters
-        self.max_step = 1024   # for each episode, max steps we allowed
-        self.terminated_threshold = 0.01
-        self.n_scatterers = 20
+        # --- RL parameters ---
+        self.max_step = 1024                # max steps per episode before truncation
 
-        # MEEP simulation parameters
-        self.resolution = 15  # pixels/cm
+        # --- MEEP simulation parameters ---
+        self.resolution = 15    # spatial resolution in pixels per unit length (cm)
+        self.n_runs = 200       # number of FDTD time steps per simulation run
 
-        # env4, 5, 6, 11 -> 100
-        # env10, 12, 20 -> 200
-        self.n_runs = 200     # number of runs during simulation ############################################################### hyper-parameter 1
+        # Source frequency derived from physical units:
+        #   a = 0.01 m (characteristic length = 1 cm)
+        #   c = 3e8 m/s
+        #   fsrc = target_freq_GHz * 1e9 * a / c = target_freq_GHz / 30
+        self.fsrc = 15.0 / 30  # source frequency in MEEP units (corresponds to 15.0 GHz)
 
+        # --- Cavity and scatterer geometry ---
+        self.n_scatterers = 20          # number of dielectric scatterers inside the cavity
+        self.scatterer_radius = 0.5     # radius of each cylindrical scatterer
 
-        '''
-        a = 0.01  chosen characteristic length = 1cm
-        c = 3e8   speed of light
-        target_freq_GHz = 15.0
-        fsrc = target_freq_GHz * 1e9 * a / c = target_freq_GHz / 30
-        '''
-        self.fsrc = 15.0 / 30  # 15.0 GHz
+        self.sx = 20    # cavity width (x-direction)
+        self.sy = 20    # cavity height (y-direction)
 
-        self.sx = 20
-        self.sy = 20
-        self.scatterer_radius = 0.5
-
-        self.sx_scatterer = self.sx - 2 * self.scatterer_radius  # range of scatterer center 
+        # valid range for scatterer centers (keeps scatterers fully inside the cavity)
+        self.sx_scatterer = self.sx - 2 * self.scatterer_radius
         self.sy_scatterer = self.sy - 2 * self.scatterer_radius
 
-        self.waveguide_width = 1.2
-        # else 6.0
-        # env20 -> 9.0
-        self.waveguide_offset = 6.0  # waveguide center distance to billiard horizontal midline ################################# hyper-parameter 5
-        self.metal_thickness = 0.2
+        # --- Waveguide geometry ---
+        self.waveguide_width = 1.2          # width of each waveguide port
+        self.waveguide_offset = 6.0         # vertical distance from cavity center to waveguide center
+        self.metal_thickness = 0.2          # thickness of metallic cavity walls
+        self.source_length_diff = 0.2       # gap between source size and waveguide width (for mode matching)
 
-        # env4, 5, 6 -> 0.1
-        # env10, 11, 12, 20  -> 0.2
-        self.source_length_diff = 0.2  # diff between source & waveguide_width    ####################################################################  hyper-parameter 2
-        
-        self.pml_thickness = 3.0
-        self.source_pml_distance = 3.0   # distance between source/montor and PML 
-        self.source_billiard_distance = 6.0
+        # --- PML and source placement ---
+        self.pml_thickness = 3.0            # perfectly matched layer thickness (absorbing boundary)
+        self.source_pml_distance = 3.0      # distance between source/monitor and PML boundary
+        self.source_billiard_distance = 6.0 # distance between source and cavity entrance
 
         self.waveguide_length = self.source_pml_distance + self.source_billiard_distance + self.pml_thickness
 
-        self.epsilon_bg = 1.0
+        # --- Material properties ---
+        self.epsilon_bg = 1.0       # background relative permittivity (vacuum)
+        self.epsilon_scatter = 2.1  # relative permittivity of dielectric scatterers
 
-        # env4 -> 3.9
-        # env5,6,10, 11,12 -> 2.1
-        # env20 -> 10
-        self.epsilon_scatter = 2.1     ####################################################################  hyper-parameter 3
-        
-        self.mode_num = 1
-        
-        # Define action and observation spaces
-        # both the action & obs space = n_scatterers * n_dim
-        self.action_space = spaces.Box(low=-1, high=1, shape=(2 * self.n_scatterers,), dtype=np.float32) 
-        # normalized coordinates, we should normalize the position by (length - 2*scatterer_radius)
-        self.observation_space = spaces.Box(low=-1, high=1, shape=(2 * self.n_scatterers,), dtype=np.float32) 
+        self.mode_num = 1  # waveguide eigenmode index used for source excitation and monitoring
 
-        # For tracking progress
-        self.best_error = float('inf')
-        self.best_positions = None
-        self.step_count = 0
-        
-        # Child classes should define these
+        # --- Action and observation spaces ---
+        # Both spaces are normalized scatterer (x, y) positions in [-1, 1], flattened to 1D
+        self.action_space = spaces.Box(low=-1, high=1, shape=(2 * self.n_scatterers,), dtype=np.float32)
+        self.observation_space = spaces.Box(low=-1, high=1, shape=(2 * self.n_scatterers,), dtype=np.float32)
+
+        # --- Training progress tracking ---
+        self.best_error = float('inf')  # lowest TM error seen so far
+        self.best_positions = None      # scatterer positions corresponding to best_error
+        self.step_count = 0             # current step within the episode
+
+        # Port definitions (overridden by child classes)
         self.source_ports = []
         self.output_ports = []
         self.reflection_ports = []
-        
-        # Meep use the 'last object wins' principle, ie, if multiple objects overlap, later objects in the list take precedence. 
-        # Allow overlapping simplifies implementation and help explore more diverse configurations.
-        # Initial scatterer positions, this is normalized position !!!
+
+        # Initial scatterer positions in normalized coordinates [-1, 1].
+        # The RL agent operates in this range; positions are scaled to physical coords
+        # via x_actual = x_norm * (sx_scatterer / 2) when building MEEP geometry.
+        # MEEP uses 'last object wins' for overlapping geometry, so overlapping scatterers are allowed.
         self.scatter_pos = self._generate_initial_positions()
 
-        # env4, 5 -> mp.EVEN_Z + mp.ODD_Y
-        # env6, 11, 12, 20 -> mp.EVEN_Y + mp.ODD_Z
-        # env10 -> mp.NO_PARITY
-        # mp.EVEN_Z + mp.ODD_Y -> Ex, Ey, Hz !=0; Ez, Hx, Hy =0
-        # mp.EVEN_Y + mp.ODD_Z -> Ex, Ey, Hz =0;  Ez, Hx, Hy !=0
-        # mp.EVEN_Y -> all elements !=0
-        # mp.NO_PARITY
-        self.eig_parity = mp.EVEN_Y + mp.ODD_Z                   ####################################################### hyper-parameter 4
+        # Eigenmode parity for source excitation and mode decomposition
+        # mp.EVEN_Y + mp.ODD_Z selects TM-like modes: Ez, Hx, Hy != 0; Ex, Ey, Hz = 0
+        self.eig_parity = mp.EVEN_Y + mp.ODD_Z
 
+        # Field post-processing function applied during visualization (default: absolute value)
         self.field_func = lambda x: (np.abs(x))
 
     def _generate_initial_positions(self, seed=None):
@@ -110,6 +93,18 @@ class BilliardBaseEnv(gym.Env):
         return self.np_random.uniform(low=-1, high=1, size=(2*self.n_scatterers,)).astype(np.float32)
     
     def _create_metal_waveguide(self, geometry, x_center, y_center, length, width):
+        """Append a horizontal PEC waveguide to the geometry.
+
+        Creates two parallel metal walls (top and bottom) with an air channel
+        between them. The waveguide is added in-place to the geometry object.
+
+        Args:
+            geometry: MEEP geometry object to append to.
+            x_center: Horizontal center of the waveguide.
+            y_center: Vertical center of the waveguide.
+            length:   Extent along x.
+            width:    Inner opening between the two metal walls.
+        """
         # Top wall of waveguide
         geometry.append(mp.Block(
             material=mp.perfect_electric_conductor,
@@ -131,12 +126,26 @@ class BilliardBaseEnv(gym.Env):
             size=mp.Vector3(length, width)
         ))
 
-    def _create_full_geometry(self, scatter_positions):
+    def _create_full_geometry(self, scatter_pos):
+        """Build the cavity geometry with scatterers for a simulation.
+
+        Assembles the geometry in MEEP's 'last object wins' order:
+          1. Metal walls, waveguides, and cavity (from _create_base_geometry)
+          2. Optional lossy/gain background medium (if uniform_loss_factor is set)
+          3. Dielectric scatterers at the agent-chosen positions
+
+        Args:
+            scatter_pos: Flat array of normalized scatterer
+                coordinates in [-1, 1], shaped as [x0, y0, x1, y1, ...].
+
+        Returns:
+            MEEP geometry object for the cavity and scatterers.
+        """
         # Convert normalized positions to actual coordinates
         actual_positions = []
         for i in range(0, 2 * self.n_scatterers, 2):
-            x = scatter_positions[i] * (self.sx_scatterer/2)
-            y = scatter_positions[i+1] * (self.sy_scatterer/2)
+            x = scatter_pos[i] * (self.sx_scatterer/2)
+            y = scatter_pos[i+1] * (self.sy_scatterer/2)
             actual_positions.append((x, y))
 
         # Create base geometry
@@ -272,14 +281,13 @@ class BilliardBaseEnv(gym.Env):
         
         return incoming_amplitude  # 73.7
 
-    def _calculate_normalized_subSM(self, normalized_scatterers_positions, matrix_type="TM", visualize=False):
+    def _calculate_normalized_subSM(self, scatter_pos, matrix_type=MatrixType.TM):
         """
         Calculate normalized scattering matrix (TM or RM) by dividing by the incoming field amplitude.
         
         Args:
-            normalized_scatterers_positions: Normalized positions of scatterers
-            matrix_type: "TM" for transmission matrix or "RM" for reflection matrix
-            visualize: Boolean to enable visualization
+            scatter_pos: Normalized positions of scatterers
+            matrix_type: MatrixType.TM for transmission matrix or MatrixType.RM for reflection matrix
             
         Returns:
             Normalized scattering matrix
@@ -288,27 +296,40 @@ class BilliardBaseEnv(gym.Env):
         incoming_amplitudes = self._measure_incoming_amplitudes()
         
         # Calculate the scattering matrix using the existing method
-        sub_matrix = self._calculate_subSM(normalized_scatterers_positions, matrix_type, visualize)
+        sub_matrix = self._calculate_subSM(scatter_pos, matrix_type)
         
         # Normalize the scattering matrix by dividing each row by the corresponding incoming amplitude
         normalized_matrix = sub_matrix / incoming_amplitudes
         
         return normalized_matrix
 
-    def _calculate_subSM(self, normalized_scatterers_positions, matrix_type="TM", visualize=False):
+    def _calculate_subSM(self, scatter_pos, matrix_type=MatrixType.TM):
+        """Compute the raw (unnormalized) scattering sub-matrix.
+
+        Runs one MEEP simulation per source port, exciting each port with an
+        eigenmode source and measuring the output mode coefficients at the
+        transmission or reflection monitors.
+
+        Args:
+            scatter_pos: Flat array of scatterer positions in [-1, 1].
+            matrix_type: MatrixType.TM for transmission matrix, MatrixType.RM for reflection matrix.
+
+        Returns:
+            np.ndarray of shape (num_ports, num_ports) with complex S-parameter entries.
+        """
         
         # Create geometry with scatterers
-        geometry = self._create_full_geometry(normalized_scatterers_positions)
+        geometry = self._create_full_geometry(scatter_pos)
         
         # Calculate transmission matrix
         sub_matrix = []
         for input_port in self.source_ports:
-            s_params = self._run_simulation_for_port(input_port, geometry, matrix_type, visualize)
+            s_params = self._run_simulation_for_port(input_port, geometry, matrix_type)
             sub_matrix.append(s_params)
         
         return np.array(sub_matrix)
     
-    def _run_simulation_for_port(self, input_port, geometry, matrix_type="TM", visualize=False, field_component=mp.Ez):
+    def _run_simulation_for_port(self, input_port, geometry, matrix_type=MatrixType.TM):
         """Run simulation for a specific input port"""
         # Create a new simulation for this port
         cell_size = mp.Vector3(self.sx + 2*self.waveguide_length, self.sy + 2*self.metal_thickness)
@@ -333,7 +354,7 @@ class BilliardBaseEnv(gym.Env):
         
         results = []
 
-        if matrix_type == "TM":
+        if matrix_type == MatrixType.TM:
             # Add monitors for all output ports
             mode_monitors = []
             for port in self.output_ports:
@@ -346,21 +367,8 @@ class BilliardBaseEnv(gym.Env):
                 )
                 mode_monitors.append(monitor)
             
-            # sim.plot2D(plot_eps_flag=True)
-
             # Run simulation
             sim.run(until=self.n_runs)
-            
-            if visualize:
-                plt.figure()
-                sim.plot2D(fields=field_component,
-                        field_parameters={'alpha':1, 'cmap': 'viridis', 'interpolation':'spline36', 'post_process':self.field_func, 'colorbar':True},  # 'cmap':'hsv'
-                        boundary_parameters={'hatch':'o', 'linewidth':1.5, 'facecolor':'y', 'edgecolor':'b', 'alpha':0.3},
-                        eps_parameters={'alpha':0.8, 'contour':False}
-                    )
-                
-                # plt.xlim(-self.sx/2 - 5, self.sx/2 + 5)
-                plt.show()
 
             # Calculate transmission coefficients for all output ports      
             for monitor in mode_monitors:
@@ -385,17 +393,6 @@ class BilliardBaseEnv(gym.Env):
 
             # Run simulation
             sim.run(until=self.n_runs)
-            
-            if visualize:
-                plt.figure()
-                sim.plot2D(fields=field_component,
-                        field_parameters={'alpha':1, 'cmap':'viridis', 'interpolation':'spline36', 'post_process':self.field_func, 'colorbar':True},   # 'cmap':'hsv'
-                        boundary_parameters={'hatch':'o', 'linewidth':1.5, 'facecolor':'y', 'edgecolor':'b', 'alpha':0.3},
-                        eps_parameters={'alpha':0.8, 'contour':False}
-                    )
-
-                # plt.xlim(-self.sx/2 - 5, self.sx/2 + 5)
-                plt.show()
 
             # Calculate transmission coefficients for all output ports
             for monitor in mode_monitors:
@@ -409,6 +406,23 @@ class BilliardBaseEnv(gym.Env):
         return results
         
     def step(self, action) -> tuple[spaces.Box, np.float32, bool, bool, dict[str, typing.Any]]:
+        """Execute one RL step: apply action, run simulation, compute reward.
+
+        The agent proposes a position adjustment (action), which is scaled down
+        and added to the current scatterer positions. A full MEEP simulation then
+        computes the transmission matrix, from which the reward is derived.
+
+        Args:
+            action: Array of shape (2 * n_scatterers,) in [-1, 1]. Scaled by
+                scaling_factor before being added to current positions.
+
+        Returns:
+            observation: Updated normalized scatterer positions.
+            reward: Scalar reward (negative TM error).
+            terminated: Always False (episodes only end by truncation).
+            truncated: True if step_count >= max_step (episode budget exhausted).
+            info: Empty dict (reserved for future use).
+        """
         self.step_count += 1
 
         # Apply action (small adjustments to positions)
@@ -416,26 +430,21 @@ class BilliardBaseEnv(gym.Env):
         self.scatter_pos = np.clip(self.scatter_pos + action * scaling_factor, -1, 1)
         
         # Calculate sub SM with new positions
-        subSM = self._calculate_subSM(self.scatter_pos, matrix_type="TM", visualize=False)
+        subSM = self._calculate_subSM(self.scatter_pos, matrix_type=MatrixType.TM)
         
         # Calculate reward and error
-        reward, error = self._calculate_reward(tm=subSM, target_type=self.target_type)
+        reward, error = self._calculate_reward(tm=subSM)
         
         # Update best positions if current error is lower than best error
         if error < self.best_error:
             self.best_error = error
             self.best_positions = self.scatter_pos.copy()  # Make a copy to prevent reference issues
 
-        # Check if goal is achieved or max steps reached
-        terminated = error < self.terminated_threshold         #  5% deviation for 1.73*t11 vs t21, 5% deviation for 1.73*t12 vs t22, error_threshold = 2 * (5%)^2 = 0.005
-        
+        # Episodes only end by truncation; training stops via callback
+        terminated = False
         truncated = self.step_count >= self.max_step
 
-        info = {
-            "error": error,
-            "scatter_pos": self.scatter_pos.copy(),
-            "step": self.step_count
-        }
+        info = {}
         
         # Print progress every 10 steps
         # if self.step_count % 10 == 0:
@@ -472,81 +481,16 @@ class BilliardBaseEnv(gym.Env):
         # Return both observation and info dict
         return self.scatter_pos, {}
 
-    def plot_field_intensity(self, sim, component=mp.Ez):
-        output_plane=mp.Volume(center=mp.Vector3(), 
-                               size=mp.Vector3(self.sx + 2*self.waveguide_length, self.sy + 2*self.metal_thickness))
-        
-        # Get the field data
-        field_data = sim.get_array(center=output_plane.center, size=output_plane.size, component=component)
-        intensity = np.abs(field_data)**2
-    
-        plt.figure()
-        plt.imshow(intensity.transpose())
-        plt.colorbar(label='Intensity')
-        plt.show()
-
-    def plot_field_cross_section(self, sim, start_point, end_point, component=mp.Ex,
-                             num_points=100, plot_abs=True):
-        """
-        Plot field values along a line between two points.
-
-        Args:
-            sim: The MEEP simulation
-            start_point: Vector3 starting coordinate
-            end_point: Vector3 ending coordinate
-            component: Field component to plot
-            num_points: Number of points to sample along the line
-            plot_abs: Whether to plot absolute value or real part
-        """
-        # Create interpolation points along the line
-        points = []
-        for i in range(num_points):
-            t = i / (num_points - 1)
-            x = start_point.x + t * (end_point.x - start_point.x)
-            y = start_point.y + t * (end_point.y - start_point.y)
-            z = start_point.z + t * (end_point.z - start_point.z)
-            points.append(mp.Vector3(x, y, z))
-
-        # Get field values at each point
-        field_values = [sim.get_field_point(component, p) for p in points]
-
-        # Calculate distances along the path for x-axis
-        distances = [0]
-        for i in range(1, len(points)):
-            p1 = points[i - 1]
-            p2 = points[i]
-            dist = np.sqrt((p2.x - p1.x) ** 2 + (p2.y - p1.y) ** 2 + (p2.z - p1.z) ** 2)
-            distances.append(distances[-1] + dist)
-
-        # Plot the field values
-        plt.figure(figsize=(10, 6))
-        if plot_abs:
-            plt.plot(distances, [abs(f) for f in field_values], 'b-', linewidth=2)
-            plt.plot(distances, [abs(f) ** 2 for f in field_values], 'r--', linewidth=2)
-            plt.legend(['|Field|', '|Field|²'])
-            plt.ylabel(f'|{component}| Amplitude')
-        else:
-            plt.plot(distances, [f.real for f in field_values], 'b-', linewidth=2)
-            plt.plot(distances, [f.imag for f in field_values], 'r--', linewidth=2)
-            plt.legend(['Re(Field)', 'Im(Field)'])
-            plt.ylabel(f'{component} Field Value')
-
-        plt.xlabel('Distance along path')
-        plt.title(f'{component} Field Along Cross-Section')
-        plt.grid(True)
-        plt.tight_layout()
-        plt.show()
-
-    def render(self, normalized_scatterers_positions=None):
+    def render(self, scatter_pos=None, save_path=None):
         """
         Plot the full structure with scatterers on a white background.
 
         Args:
-            normalized_scatterers_positions: Normalized positions of scatterers (optional)
-                                            Uses self.scatter_pos if not provided
+            scatter_pos: Normalized positions of scatterers (optional)
+                         Uses self.scatter_pos if not provided
         """
         # Use provided positions or current positions
-        positions = normalized_scatterers_positions if normalized_scatterers_positions is not None else self.scatter_pos
+        positions = scatter_pos if scatter_pos is not None else self.scatter_pos
 
         # Create geometry with scatterers
         geometry = self._create_full_geometry(positions)
@@ -646,109 +590,30 @@ class BilliardBaseEnv(gym.Env):
 
         # Improve appearance
         plt.tight_layout()
+        if save_path:
+            plt.savefig(save_path, dpi=150, bbox_inches='tight')
         plt.show()
         sim.reset_meep()
 
         return fig
 
-    def plot_lowest_transmission_eigenchannel(self, scatter_positions, field_component=mp.Ez):
+    def plot_lowest_transmission_eigenchannel_steady_state(self, scatter_pos=None, field_component=mp.Ez, matrix_type=MatrixType.TM):
         """
-        Plot the field pattern of the lowest transmission eigenchannel.
+        Plot the steady-state field pattern of the lowest transmission eigenchannel
+        (smallest singular value of the TM, i.e., the most suppressed channel).
         
         Args:
-            scatter_positions: Normalized positions of the scatterers
-        """
-        # Calculate the transmission matrix
-        tm = self._calculate_normalized_subSM(scatter_positions, matrix_type="TM")
-        
-        tm = tm.T   # convert to standard notation
-
-        # Perform SVD on the transmission matrix
-        U, S, Vh = np.linalg.svd(tm)
-        
-        # The lowest transmission eigenchannel corresponds to the smallest singular value
-        min_idx = np.argmin(S)
-
-        # Overwrite to plot the higheset eigenchannel
-        # min_idx = 0
-
-        # Get the input state (right singular vector) corresponding to the lowest eigenchannel
-        v_min = Vh[min_idx, :].conj()  # Complex conjugate for correct phase
-        
-        print(f"Singular values: {S}")
-        print(f"Lowest transmission channel (singular value = {S[min_idx]}) selected")
-        
-        # Create geometry with scatterers
-        geometry = self._create_full_geometry(scatter_positions)
-        
-        # Create a custom source that excites the eigenchannel
-        sources = []
-        for i, port in enumerate(self.source_ports):
-            # Use the eigenvector component as amplitude/phase for each port
-            amplitude = v_min[i]
-            sources.append(mp.EigenModeSource(
-                mp.ContinuousSource(frequency=self.fsrc),
-                center=port["position"],
-                size=mp.Vector3(0, self.waveguide_width - self.source_length_diff),
-                eig_band=self.mode_num,
-                eig_parity=self.eig_parity,
-                amplitude=amplitude
-            ))
-        
-        # Setup simulation
-        cell_size = mp.Vector3(self.sx + 2*self.waveguide_length, self.sy + 2*self.metal_thickness)
-        pml_layers = [mp.PML(self.pml_thickness, direction=mp.X)]
-        
-        sim = mp.Simulation(
-            cell_size=cell_size,
-            boundary_layers=pml_layers,
-            geometry=geometry,
-            sources=sources,
-            resolution=self.resolution,
-            dimensions=2
-        )
-        
-        # Run simulation
-        sim.run(until=self.n_runs)
-        
-        # Plot the field
-        plt.figure(figsize=(12, 10))
-        
-        # Plot field intensity
-        sim.plot2D(fields=field_component,
-                field_parameters={'alpha': 1, 'cmap': 'viridis', 
-                                'interpolation': 'spline36', 
-                                'post_process': self.field_func, 
-                                'colorbar': True},
-                boundary_parameters={'hatch': 'o', 'linewidth': 1.5, 
-                                    'facecolor': 'none', 'edgecolor': 'k', 
-                                    'alpha': 0.3},
-                eps_parameters={'alpha': 0.8, 'contour': False}
-                )
-        
-        plt.title(f"Field Pattern of Lowest Transmission Eigenchannel (σ = {S[min_idx]:.4f})")
-        plt.tight_layout()
-        plt.show()
-        
-        # Clean up
-        sim.reset_meep()
-
-    def plot_lowest_transmission_eigenchannel_steady_state(self, scatter_positions=None, field_component=mp.Ez, matrix_type="TM"):
-        """
-        Plot the steady-state field pattern of the lowest eigenchannel (highest transmission/lowest loss).
-        
-        Args:
-            scatter_positions: Positions of scatterers (uses current positions if None)
+            scatter_pos: Positions of scatterers (uses current positions if None)
             field_component: Field component to plot (default: mp.Ez)
             n_modes: Number of modes to compute when finding the lowest eigenchannel
         """
         dft_resolution = 1
 
-        if scatter_positions is None:
-            scatter_positions = self.scatter_pos
+        if scatter_pos is None:
+            scatter_pos = self.scatter_pos
         
         # Create geometry with scatterers
-        geometry = self._create_full_geometry(scatter_positions)
+        geometry = self._create_full_geometry(scatter_pos)
         
         # Setup simulation cell
         cell_size = mp.Vector3(self.sx + 2 * self.waveguide_length, self.sy + 2 * self.metal_thickness)
@@ -756,7 +621,7 @@ class BilliardBaseEnv(gym.Env):
         
         # First, calculate the full scattering matrix
         # We need all source ports and output ports to construct the matrix
-        tm = self._calculate_normalized_subSM(scatter_positions, matrix_type, visualize=False)
+        tm = self._calculate_normalized_subSM(scatter_pos, matrix_type)
         tm = tm.T
 
         # Perform Singular Value Decomposition (SVD) to find eigenchannels
@@ -766,7 +631,6 @@ class BilliardBaseEnv(gym.Env):
         
         min_idx = np.argmin(S)
         print(f"Lowest Singular values: {S[min_idx]}")
-        # The highest singular value corresponds to the lowest-loss eigenchannel
         # The corresponding right singular vector tells us how to excite this channel
         eigenchannel_weights = Vh[min_idx].conj()  # row of V† matrix
             
@@ -843,15 +707,31 @@ class BilliardBaseEnv(gym.Env):
         # Clean up
         sim.reset_meep()
 
-    def plot_steady_state_with_given_inputs(self, input_weights, scatter_positions=None, field_component=mp.Ez):
+    def plot_steady_state_with_given_inputs(self, input_weights, scatter_pos=None, field_component=mp.Ez, save_path=None):
+        """Plot the steady-state (frequency-domain) field for an arbitrary input excitation.
+
+        Excites all source ports simultaneously with the given complex weights
+        (normalized to unit norm), runs the FDTD simulation, and plots the
+        DFT-accumulated field pattern at the source frequency.
+
+        This is useful for visualizing specific eigenchannels, superpositions,
+        or any custom input state.
+
+        Args:
+            input_weights: Complex array of length num_ports. Each element sets
+                the amplitude and phase of the eigenmode source at that port.
+                Automatically normalized to unit norm before use.
+            scatter_pos: Normalized scatterer positions (uses self.scatter_pos if None).
+            field_component: MEEP field component to plot (default: mp.Ez).
+        """
 
         dft_resolution = 1
 
-        if scatter_positions is None:
-            scatter_positions = self.scatter_pos
+        if scatter_pos is None:
+            scatter_pos = self.scatter_pos
         
         # Create geometry with scatterers
-        geometry = self._create_full_geometry(scatter_positions)
+        geometry = self._create_full_geometry(scatter_pos)
         
         # Setup simulation cell
         cell_size = mp.Vector3(self.sx + 2 * self.waveguide_length, self.sy + 2 * self.metal_thickness)
@@ -925,179 +805,13 @@ class BilliardBaseEnv(gym.Env):
         plt.xlim([-16, 16])
         plt.colorbar(label='|E|', shrink=0.5)
         plt.tight_layout()
+        if save_path:
+            plt.savefig(save_path, dpi=150, bbox_inches='tight')
         plt.show()
+        plt.close()
 
         # Clean up
         sim.reset_meep()
-    
-    def plot_speckle_patterns(self, scatter_positions=None, field_component=mp.Ez):
-        """
-        Plot the speckle pattern (field distribution) for each input port excited individually
-        using sim.plot2D() for visualization.
-        
-        Args:
-            scatter_positions: Normalized positions of scatterers
-            field_component: Which field component to visualize (default: mp.Ez)
-        """
-
-        if scatter_positions is None:
-            scatter_positions = self.scatter_pos
-
-        # Create geometry with scatterers
-        geometry = self._create_full_geometry(scatter_positions)
-        
-        # Set up figure with subplots for each input port
-        n_ports = len(self.source_ports)
-        fig, axes = plt.subplots(n_ports, 1, figsize=(8, 6*n_ports))
-        if n_ports == 1:  # Handle case with a single input port
-            axes = [axes]
-        
-        for idx, input_port in enumerate(self.source_ports):
-            # Create simulation for this port
-            cell_size = mp.Vector3(self.sx + 2*self.waveguide_length, self.sy + 2*self.metal_thickness)
-            pml_layers = [mp.PML(self.pml_thickness, direction=mp.X)]
-            
-            sources = [mp.EigenModeSource(
-                mp.ContinuousSource(frequency=self.fsrc),
-                center=input_port["position"],
-                size=mp.Vector3(0, self.waveguide_width - self.source_length_diff),
-                eig_band=self.mode_num,
-                eig_parity=self.eig_parity
-            )]
-            
-            sim = mp.Simulation(
-                cell_size=cell_size,
-                boundary_layers=pml_layers,
-                geometry=geometry,
-                sources=sources,
-                resolution=self.resolution,
-                dimensions=2
-            )
-            
-            # Run simulation
-            sim.run(until=self.n_runs)
-            
-            # Set the current axis for plot2D to use
-            plt.sca(axes[idx])
-            
-            # Plot the field using plot2D
-            sim.plot2D(
-                fields=field_component,
-                field_parameters={
-                    'alpha': 1,
-                    'cmap': 'viridis', 
-                    'interpolation': 'spline36',
-                    'post_process': self.field_func,
-                    'colorbar': True
-                },
-                boundary_parameters={
-                    'hatch': 'o', 
-                    'linewidth': 1.5, 
-                    'facecolor': 'none', 
-                    'edgecolor': 'k', 
-                    'alpha': 0.3
-                },
-                eps_parameters={
-                    'alpha': 0.8, 
-                    'contour': False
-                }
-            )
-            
-            axes[idx].set_title(f"Input Port: {input_port['name']}")
-            
-            # Clean up before next simulation
-            sim.reset_meep()
-        
-        plt.tight_layout()
-        plt.suptitle("Speckle Patterns for Individual Input Ports", fontsize=16, y=0.98)
-        plt.show()
-        
-        return fig, axes
-
-    def plot_speckle_patterns_steady_state(self, scatter_positions=None, field_component=mp.Ez, input_port_index=0):
-
-        dft_resolution = 1
-
-        """Plot steady-state fields at a single frequency using MEEP's output_dft"""
-        if scatter_positions is None:
-            scatter_positions = self.scatter_pos
-        
-        # Create geometry with scatterers
-        geometry = self._create_full_geometry(scatter_positions)
-        
-        # Get the input port
-        input_port = self.source_ports[input_port_index]
-        
-        # Setup simulation
-        cell_size = mp.Vector3(self.sx + 2 * self.waveguide_length, self.sy + 2 * self.metal_thickness)
-        pml_layers = [mp.PML(self.pml_thickness, direction=mp.X)]
-        
-        sources = [mp.EigenModeSource(
-            mp.ContinuousSource(frequency=self.fsrc),
-            center=input_port["position"],
-            size=mp.Vector3(0, self.waveguide_width - self.source_length_diff),
-            eig_band=self.mode_num,
-            eig_parity=self.eig_parity
-        )]
-        
-        sim = mp.Simulation(
-            cell_size=cell_size,
-            boundary_layers=pml_layers,
-            geometry=geometry,
-            sources=sources,
-            resolution=self.resolution,
-            dimensions=2
-        )
-        
-        # Add DFT monitor for the entire cell
-        dft = sim.add_dft_fields([field_component], 
-                                self.fsrc, self.fsrc, 1,
-                                center=mp.Vector3(),
-                                size=cell_size,
-                                resolution=dft_resolution)
-        
-        # Run simulation until steady state
-        sim.run(until=self.n_runs)
-        
-        # Create a new figure
-        plt.figure(figsize=(10, 8))
-    
-
-        dft_data = sim.get_dft_array(dft, field_component, 0)
-
-        # Get the grid dimensions for the DFT data
-        nx, ny = dft_data.shape
-        x = np.linspace(-cell_size.x/2, cell_size.x/2, nx)
-        y = np.linspace(-cell_size.y/2, cell_size.y/2, ny)
-        X, Y = np.meshgrid(x, y, indexing='ij')
-        
-        # Get the dielectric structure for overlay (can use lower resolution too)
-        eps_data = sim.get_epsilon()
-        
-
-        # Plot intensity (magnitude squared)
-        plot_data = self.field_func(dft_data) # np.log(np.abs(dft_data)**2 + 1e-6)
-        
-        plt.imshow(plot_data.T, 
-                   origin='lower', 
-                   extent=[-cell_size.x/2, cell_size.x/2, -cell_size.y/2, cell_size.y/2],
-                   cmap='viridis', 
-                   vmin=0, 
-                   interpolation='bilinear')
-        
-        
-        # Add colorbar and labels
-        plt.colorbar(label='Intensity')
-        plt.xticks([-20, -10, 0, 10, 20])
-        plt.yticks([-10, 0, 10])
-        plt.tight_layout()
-        
-
-        plt.show()
-
-        sim.reset_meep()
-        
-        return plot_data
         
     def plot_phase_map(self, scatter_pos, freq_range=(0.45, 0.55), freq_points=3,
                        loss_range=(-0.05, 0.05), loss_points=3, save_path=None):
@@ -1146,7 +860,7 @@ class BilliardBaseEnv(gym.Env):
                     self.fsrc = freq
 
                     # Calculate TM with current settings
-                    tm = self._calculate_subSM(scatter_pos, matrix_type="TM", visualize=False)
+                    tm = self._calculate_subSM(scatter_pos, matrix_type=MatrixType.TM)
 
                     # Calculate determinant and its phase angle
                     det = tm[0][0] * tm[1][1] - tm[0][1] * tm[1][0]
@@ -1263,7 +977,7 @@ class BilliardBaseEnv(gym.Env):
                 self.fsrc = freq
                 
                 # Calculate TM with current settings
-                tm = self._calculate_normalized_subSM(scatter_pos, matrix_type="TM", visualize=False)
+                tm = self._calculate_normalized_subSM(scatter_pos, matrix_type=MatrixType.TM)
                 
                 # Calculate singular values (transmission eigenvalues)
                 singular_values = np.linalg.svd(tm, compute_uv=False)
@@ -1401,7 +1115,7 @@ class BilliardBaseEnv(gym.Env):
                     self.fsrc = freq
                     
                     # Calculate transmission matrix at this configuration
-                    tm = self._calculate_normalized_subSM(scatter_pos, matrix_type="TM", visualize=False)
+                    tm = self._calculate_normalized_subSM(scatter_pos, matrix_type=MatrixType.TM)
                     
                     # Calculate singular values
                     singular_values = np.linalg.svd(tm, compute_uv=False)
@@ -1471,42 +1185,6 @@ class BilliardBaseEnv(gym.Env):
         
         return fig, ax, schmidt_data, freq_array, pos_array, singular_value_data
 
-    def schmidt_number(self, tm):
-        """
-        Calculate the Schmidt number of a transmission matrix.
-        
-        Parameters:
-        -----------
-        tm : numpy.ndarray
-            The transmission matrix (can be any shape)
-        
-        Returns:
-        --------
-        float
-            The Schmidt number
-        
-        Example:
-        --------
-        >>> tm = np.array([[0.5, 0.5], [0.5, 0.5]])
-        >>> schmidt_number(tm)
-        2.0
-        """
-        # Calculate singular values
-        singular_values = np.linalg.svd(tm, compute_uv=False)
-        
-        # Square the singular values
-        squared_values = singular_values ** 2
-        
-        # Calculate Schmidt number: (sum of squared values)^2 / sum of (squared values)^2
-        numerator = np.sum(squared_values) ** 2
-        denominator = np.sum(squared_values ** 2)
-        
-        # Avoid division by zero
-        if denominator == 0:
-            return 0
-        
-        return numerator / denominator
-
     def _create_base_geometry(self):
         """
         Create the base geometry (billiard and waveguides).
@@ -1514,7 +1192,7 @@ class BilliardBaseEnv(gym.Env):
         """
         raise NotImplementedError("Subclasses must implement _create_base_geometry")
     
-    def _calculate_reward(self, tm, target_type):
+    def _calculate_reward(self, tm):
         """
         Calculate reward based on the transmission matrix.
         Child classes should implement this method.

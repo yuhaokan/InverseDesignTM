@@ -2,14 +2,8 @@ import numpy as np
 import meep as mp
 from gymnasium.utils.env_checker import check_env
 
-try:
-    # Try relative i,port first (when used as part of the package)
-    from .base_env import BilliardBaseEnv
-    from .target_type import TargetType
-except ImportError:
-    # Fall back to direct import (when run as a script)
-    from base_env import BilliardBaseEnv
-    from target_type import TargetType
+from .base_env import BilliardBaseEnv
+from ..enums import TargetType, MatrixType
 
 # Suppress logging
 mp.verbosity(0)
@@ -26,21 +20,21 @@ class BilliardThreeEnv(BilliardBaseEnv):
 
         # Define ports - now with 3 input and 3 output ports (added center ports)
         self.source_ports = [
-            {"name": "left_top", "position": mp.Vector3(-self.sx/2-self.source_billiard_distance, self.waveguide_offset), "direction": mp.X},
-            {"name": "left_center", "position": mp.Vector3(-self.sx/2-self.source_billiard_distance, 0), "direction": mp.X},
-            {"name": "left_bottom", "position": mp.Vector3(-self.sx/2-self.source_billiard_distance, -self.waveguide_offset), "direction": mp.X}
+            {"name": "left_top", "position": mp.Vector3(-self.sx/2-self.source_billiard_distance, self.waveguide_offset)},
+            {"name": "left_center", "position": mp.Vector3(-self.sx/2-self.source_billiard_distance, 0)},
+            {"name": "left_bottom", "position": mp.Vector3(-self.sx/2-self.source_billiard_distance, -self.waveguide_offset)}
         ]
 
         self.output_ports = [
-            {"name": "right_top", "position": mp.Vector3(self.sx/2+self.source_billiard_distance, self.waveguide_offset), "direction": mp.X},
-            {"name": "right_center", "position": mp.Vector3(self.sx/2+self.source_billiard_distance, 0), "direction": mp.X},
-            {"name": "right_bottom", "position": mp.Vector3(self.sx/2+self.source_billiard_distance, -self.waveguide_offset), "direction": mp.X}
+            {"name": "right_top", "position": mp.Vector3(self.sx/2+self.source_billiard_distance, self.waveguide_offset)},
+            {"name": "right_center", "position": mp.Vector3(self.sx/2+self.source_billiard_distance, 0)},
+            {"name": "right_bottom", "position": mp.Vector3(self.sx/2+self.source_billiard_distance, -self.waveguide_offset)}
         ]
 
         self.reflection_ports = [
-            {"name": "left_top", "position": mp.Vector3(-self.sx/2-self.source_billiard_distance/2, self.waveguide_offset), "direction": mp.X},
-            {"name": "left_center", "position": mp.Vector3(-self.sx/2-self.source_billiard_distance/2, 0), "direction": mp.X},
-            {"name": "left_bottom", "position": mp.Vector3(-self.sx/2-self.source_billiard_distance/2, -self.waveguide_offset), "direction": mp.X}
+            {"name": "left_top", "position": mp.Vector3(-self.sx/2-self.source_billiard_distance/2, self.waveguide_offset)},
+            {"name": "left_center", "position": mp.Vector3(-self.sx/2-self.source_billiard_distance/2, 0)},
+            {"name": "left_bottom", "position": mp.Vector3(-self.sx/2-self.source_billiard_distance/2, -self.waveguide_offset)}
         ]
     
     def _create_base_geometry(self):
@@ -144,12 +138,12 @@ class BilliardThreeEnv(BilliardBaseEnv):
         
         return geometry
         
-    def _calculate_reward(self, tm, target_type: TargetType = TargetType.RANK1) -> tuple[np.float32, np.float32]:
+    def _calculate_reward(self, tm) -> tuple[np.float32, np.float32]:
         """
         Calculate reward based on how close the transmission matrix is to being rank-1.
         For a rank-1 matrix, the singular values beyond the first one should be zero.
         """
-        match target_type:
+        match self.target_type:
 
             case TargetType.RANK1:
                 # Convert the transmission matrix to a numpy array
@@ -183,12 +177,6 @@ if __name__ == "__main__":
     # check_env(env)
     # print("check env end")
 
-    normalized_rm = env._calculate_normalized_subSM(env.scatter_pos, matrix_type="RM", visualize=False)
-    normalized_tm = env._calculate_normalized_subSM(env.scatter_pos, matrix_type="TM", visualize=False)
-    print(normalized_rm @ np.conj(normalized_rm).T + normalized_tm @ np.conj(normalized_tm).T)
+    # env.render(save_path='billiard_three_cavity.png')
 
-    # tm_sample = env._calculate_subSM(env.scatter_pos, matrix_type="RM", visualize=True)
-    # print(tm_sample)
-    # print(env._calculate_reward(tm_sample))
-
-    # env.plot_speckle_patterns(field_component=mp.Ez)
+    env.plot_steady_state_with_given_inputs(np.array([1, 0, 0]), field_component=mp.Ez, save_path='billiard_three_top_excitation.png')
