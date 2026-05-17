@@ -5,7 +5,7 @@ from stable_baselines3.common.utils import get_linear_fn
 import os
 
 from .enums import TargetType, AlgoType, BilliardType
-from .callbacks import TensorboardStepCallback, SaveBestPosCallback
+from .callbacks import TensorboardStepCallback, SaveBestPosCallback, RewardDistributionCallback
 from .utils import create_model, make_env, NetworkVisualizer
 
 
@@ -52,11 +52,12 @@ def train(env, env_name, algo_name, error_threshold):
         save_name=f"best_pos_{env_name}_{algo_name.value}",
     )
     tensorboardStepCallback = TensorboardStepCallback(log_freq=8)
+    rewardDistributionCallback = RewardDistributionCallback(save_path=position_dir, n_steps=128)
     try:
         # Train until we find a satisfactory solution
         model.learn(
             total_timesteps=1000000,  # Maximum steps if solution isn't found
-            callback=[saveBestPosCallback, tensorboardStepCallback],
+            callback=[saveBestPosCallback, tensorboardStepCallback, rewardDistributionCallback],
             tb_log_name=f"{env_name}_{algo_name.value}",
             log_interval=1
         )

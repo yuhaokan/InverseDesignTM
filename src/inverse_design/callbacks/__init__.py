@@ -1,2 +1,3 @@
 from .tensorboard_step_callback import TensorboardStepCallback
 from .save_best_pos_callback import SaveBestPosCallback
+from .reward_distribution_callback import RewardDistributionCallback
