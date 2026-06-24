@@ -1,11 +1,5 @@
 tmp*
 *.npz
-*.csv
-
-# local helper file
-plot_2d.py
-plot_loss.py
-validate.py
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
@@ -183,3 +177,9 @@ cython_debug/
 .pypirc
 
 .vscode/
+
+csv_extracted_from_logs/
+sweep_data/
+positions/
+logs/
+utils_not_in_git/

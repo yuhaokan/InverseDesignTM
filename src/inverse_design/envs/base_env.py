@@ -292,7 +292,7 @@ class BilliardBaseEnv(gym.Env):
             Normalized scattering matrix
         """
         # First, calculate the incoming field amplitudes at each source port
-        incoming_amplitudes = self._measure_incoming_amplitudes()
+        incoming_amplitudes = 73.7 #self._measure_incoming_amplitudes()
         
         # Calculate the scattering matrix using the existing method
         sub_matrix = self._calculate_subSM(scatter_pos, matrix_type)
@@ -466,9 +466,9 @@ class BilliardBaseEnv(gym.Env):
         super().reset(seed=seed)
 
         # Optionally reset to best known positions with small perturbation
-        if self.best_positions is not None and self.np_random.random() < 0.7:
+        if self.best_positions is not None: # and self.np_random.random() < 0.7:
             # 70% chance to use best positions with small Gaussian noise
-            noise = self.np_random.normal(0, 0.005, size=(2*self.n_scatterers,)).astype(np.float32)
+            noise = self.np_random.normal(0, 0.0001, size=(2*self.n_scatterers,)).astype(np.float32)
             self.scatter_pos = np.clip(self.best_positions + noise, -1, 1)
         else:
             # 30% chance to generate new random positions
@@ -811,131 +811,6 @@ class BilliardBaseEnv(gym.Env):
 
         # Clean up
         sim.reset_meep()
-        
-    def plot_phase_map(self, scatter_pos, freq_range=(0.45, 0.55), freq_points=3,
-                       loss_range=(-0.05, 0.05), loss_points=3, save_path=None):
-        """
-        Plot a phase map of det(TM) angle vs frequency and loss factor.
-
-        Args:
-            scatter_pos: Position of scatterers (normalized)
-            freq_range: Tuple of (min_freq, max_freq) around self.fsrc
-            freq_points: Number of frequency points to sample
-            loss_range: Tuple of (min_loss, max_loss) for uniform loss
-            loss_points: Number of loss points to sample
-            save_path: Path to save the figure (if None, display only)
-
-        Returns:
-            Fig, ax objects of the generated plot
-        """
-
-        # Create frequency and loss arrays
-        freqs = np.linspace(freq_range[0], freq_range[1], freq_points)
-        losses = np.linspace(loss_range[0], loss_range[1], loss_points)
-
-        # Initialize results array for det(TM) angle
-        det_angles = np.zeros((loss_points, freq_points), dtype=np.float64)
-        det_magnitudes = np.zeros((loss_points, freq_points), dtype=np.float64)
-
-        # Store original values to restore later
-        original_freq = self.fsrc
-        original_loss = getattr(self, 'uniform_loss_factor', 0)
-
-        # Add uniform loss factor attribute if not present
-        if not hasattr(self, 'uniform_loss_factor'):
-            self.uniform_loss_factor = 0
-
-        # Set up progress tracking
-        total_iterations = loss_points * freq_points
-        current_iteration = 0
-
-        try:
-            # Loop over loss values and frequencies
-            for i, loss in enumerate(losses):
-                self.uniform_loss_factor = loss
-
-                for j, freq in enumerate(freqs):
-                    # Update frequency
-                    self.fsrc = freq
-
-                    # Calculate TM with current settings
-                    tm = self._calculate_subSM(scatter_pos, matrix_type=MatrixType.TM)
-
-                    # Calculate determinant and its phase angle
-                    det = tm[0][0] * tm[1][1] - tm[0][1] * tm[1][0]
-                    angle = np.angle(det, deg=False)
-                    magnitude = np.abs(det)
-
-                    det_angles[i, j] = angle
-                    det_magnitudes[i, j] = magnitude
-
-                    # Update progress
-                    current_iteration += 1
-                    if current_iteration % 5 == 0 or current_iteration == total_iterations:
-                        print(f"Progress: {current_iteration}/{total_iterations} iterations completed")
-
-        finally:
-            # Restore original values
-            self.fsrc = original_freq
-            self.uniform_loss_factor = original_loss
-
-            
-        # Save if path provided
-        if save_path:
-            np.savez(save_path + 'det_phase_map.npz', freqs=freqs, losses=losses, det_angles=det_angles, det_magnitudes=det_magnitudes)
-
-        # Create figure with two subplots - phase and magnitude
-        fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(16, 8))
-
-        # Plot phase map
-        pcm1 = ax1.pcolormesh(
-            freqs,
-            -losses,   # put loss in lower half plane
-            det_angles,
-            cmap='hsv',
-            vmin=-np.pi,
-            vmax=np.pi,
-            shading='auto'
-        )
-
-        # Add colorbar for phase
-        cbar1 = fig.colorbar(pcm1, ax=ax1, label='Phase Angle of det(TM)')
-
-        # Plot magnitude map (log scale for better visualization)
-        pcm2 = ax2.pcolormesh(
-            freqs,
-            -losses,    # put loss in lower half plane
-            np.log10(det_magnitudes),
-            cmap='viridis',
-            shading='auto'
-        )
-
-        # Add colorbar for magnitude
-        cbar2 = fig.colorbar(pcm2, ax=ax2, label='Log10 Magnitude of det(TM)')
-
-        # Add labels and titles
-        ax1.set_xlabel('Frequency')
-        ax1.set_ylabel('Loss/Gain Factor (negative = loss)')
-        ax1.set_title('Phase Map of Determinant')
-        # ax1.grid(True, linestyle='--', alpha=0.7)
-
-        ax2.set_xlabel('Frequency')
-        ax2.set_ylabel('Loss/Gain Factor (negative = loss)')
-        ax2.set_title('Magnitude Map of Determinant')
-        # ax2.grid(True, linestyle='--', alpha=0.7)
-
-        # Add reference line at zero loss for both plots
-        # ax1.axhline(y=0, color='red', linestyle='-', alpha=0.7, linewidth=1)
-        # ax2.axhline(y=0, color='red', linestyle='-', alpha=0.7, linewidth=1)
-
-        # Add a main title
-        plt.suptitle('Phase and Magnitude of det(TM)', fontsize=16)
-        plt.tight_layout()
-
-        plt.show()
-
-        return fig, (ax1, ax2)
-    
     def plot_transmission_eigenvalue_spectrum(self, scatter_pos=None, freq_range=(0.45, 0.55), 
                                             freq_points=51, save_path=None):
         """

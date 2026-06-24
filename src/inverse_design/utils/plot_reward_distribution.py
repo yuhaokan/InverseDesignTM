@@ -51,12 +51,13 @@ def plot_ridgeline(csv_path, save_path=None, step=1):
         ax.spines['left'].set_visible(False)
 
     axes[-1].set_xlabel('Reward')
-    fig.suptitle('Reward Distribution per Rollout', fontsize=12)
+    fig.supylabel('Rollout idx')
+    # fig.suptitle('Reward Distribution per Rollout', fontsize=12)
     plt.tight_layout()
 
     if save_path:
-        plt.savefig(save_path, dpi=150, bbox_inches='tight')
-    plt.show()
+        plt.savefig(save_path, format='svg', bbox_inches='tight')
+    # plt.show()
     plt.close()
 
 
@@ -65,7 +66,7 @@ if __name__ == '__main__':
     csv_path = os.path.join(current_dir, '..', 'positions', 'reward_distributions.csv')
 
     if os.path.exists(csv_path):
-        save_path = os.path.join(current_dir, '..', 'positions', 'reward_ridgeline3_0.05.png')
-        plot_ridgeline(csv_path, save_path=save_path, step=9)
+        save_path = os.path.join(current_dir, '..', 'positions', 'reward_ridgeline3_0.05_3.svg')
+        plot_ridgeline(csv_path, save_path=save_path, step=3)
     else:
         print(f"No reward distribution data found at {csv_path}")
